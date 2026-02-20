@@ -528,9 +528,9 @@ export default function CitizenDashboard() {
                                         </p>
                                         <button
                                             onClick={() => setActiveTab('raise')}
-                                            className="px-8 py-4 bg-white text-blue-700 rounded-xl font-bold text-lg hover:bg-blue-50 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] flex items-center gap-2 transform active:scale-95"
+                                            className="px-8 py-5 bg-gradient-to-r from-indigo-600 to-blue-700 text-white rounded-2xl font-black text-lg hover:shadow-[0_15px_40px_rgba(79,70,229,0.4)] transition-all flex items-center gap-3 transform active:scale-95 shadow-xl"
                                         >
-                                            <PlusCircle size={22} />
+                                            <PlusCircle size={22} strokeWidth={3} />
                                             Raise New Complaint
                                         </button>
                                     </div>
@@ -580,8 +580,8 @@ export default function CitizenDashboard() {
                                     <div className="absolute top-0 left-0 w-full h-2 bg-linear-to-r from-primary-400 via-purple-500 to-primary-600"></div>
 
                                     <div className="flex items-center gap-4 mb-8 text-slate-800">
-                                        <div className="p-3 bg-primary-50 text-primary-600 rounded-2xl shadow-sm border border-primary-100">
-                                            <Mic size={28} />
+                                        <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shadow-sm border border-indigo-100">
+                                            <Mic size={24} strokeWidth={2.5} />
                                         </div>
                                         <div>
                                             <h3 className="text-2xl font-heading font-extrabold tracking-tight">Describe the Issue</h3>
@@ -616,12 +616,12 @@ export default function CitizenDashboard() {
 
                                             <button
                                                 onClick={toggleListening}
-                                                className={`absolute bottom-6 right-6 p-5 rounded-2xl shadow-2xl transition-all hover:scale-110 active:scale-95 z-40 ${isListening
-                                                    ? 'bg-red-500 text-white ring-8 ring-red-100 animate-pulse'
-                                                    : 'bg-primary-600 text-white hover:bg-primary-700'
+                                                className={`absolute bottom-6 right-6 p-5 rounded-2xl shadow-xl transition-all hover:scale-110 active:scale-95 z-40 border-2 border-white/50 ${isListening
+                                                    ? 'bg-red-500 text-white ring-8 ring-red-100 animate-pulse shadow-[0_0_30px_rgba(239,68,68,0.4)]'
+                                                    : 'bg-gradient-to-br from-indigo-600 to-blue-700 text-white hover:shadow-[0_10px_30px_rgba(79,70,229,0.3)]'
                                                     }`}
                                             >
-                                                <Mic size={28} />
+                                                <Mic size={28} strokeWidth={2.5} className={isListening ? 'animate-pulse' : ''} />
                                             </button>
                                         </div>
                                     </div>
@@ -680,7 +680,7 @@ export default function CitizenDashboard() {
                                         <button
                                             onClick={handleAnalyze}
                                             disabled={isAnalyzing || !complaintText}
-                                            className="w-full py-5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-2xl font-bold text-xl hover:from-primary-700 hover:to-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-primary-200 hover:shadow-2xl hover:shadow-primary-300 active:scale-[0.98] flex items-center justify-center gap-3"
+                                            className="w-full py-6 bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 text-white rounded-[2rem] font-black text-xl hover:shadow-[0_20px_50px_rgba(79,70,229,0.4)] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xl active:scale-[0.98] flex items-center justify-center gap-4 group"
                                         >
                                             {isAnalyzing ? (
                                                 <>
@@ -689,8 +689,8 @@ export default function CitizenDashboard() {
                                                 </>
                                             ) : (
                                                 <>
-                                                    <Send size={22} />
-                                                    Submit Complaint
+                                                    <Send size={24} strokeWidth={3} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                                                    Submit & Analyze Complaint
                                                 </>
                                             )}
                                         </button>
@@ -732,7 +732,9 @@ export default function CitizenDashboard() {
                                             <button
                                                 onClick={handleFileComplaint}
                                                 disabled={isSubmitting || isSuccess}
-                                                className={`w-full mt-8 py-5 text-white rounded-2xl font-bold text-xl transition-all shadow-xl flex items-center justify-center gap-3 transform active:scale-[0.98] ${isSuccess ? 'bg-green-600 shadow-green-200' : 'bg-green-600 hover:bg-green-700 shadow-green-200 hover:shadow-green-300'
+                                                className={`w-full mt-8 py-6 text-white rounded-[2rem] font-black text-xl transition-all shadow-2xl flex items-center justify-center gap-4 transform active:scale-[0.98] ${isSuccess
+                                                    ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-emerald-200'
+                                                    : 'bg-gradient-to-r from-green-600 to-emerald-700 hover:shadow-[0_20px_50px_rgba(16,185,129,0.4)]'
                                                     }`}
                                             >
                                                 {isSubmitting ? (
@@ -742,12 +744,12 @@ export default function CitizenDashboard() {
                                                     </>
                                                 ) : isSuccess ? (
                                                     <>
-                                                        <CheckCircle2 size={24} />
+                                                        <CheckCircle2 size={32} strokeWidth={3} />
                                                         Successfully Filed!
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <CheckCircle2 size={24} />
+                                                        <CheckCircle2 size={32} strokeWidth={3} />
                                                         Confirm & File Report
                                                     </>
                                                 )}

@@ -8,7 +8,6 @@ import {
     ListFilter,
     Users,
     AlertTriangle,
-    FileBarChart,
     Settings,
     ShieldAlert,
     LogOut,
@@ -340,7 +339,6 @@ export default function AdminDashboard() {
         { id: 'complaints', label: 'All Complaints', icon: <ListFilter size={20} /> },
         { id: 'map', label: 'City Map', icon: <MapPin size={20} /> },
         { id: 'sla', label: 'SLA Monitoring', icon: <AlertTriangle size={20} /> },
-        { id: 'analytics', label: 'Analytics', icon: <FileBarChart size={20} /> },
     ];
 
     // Chart Data Configs

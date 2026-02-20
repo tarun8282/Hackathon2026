@@ -137,3 +137,6 @@ insert into public.departments (name, contact_number) values
 ('Street Lighting', '080-1234-5004'),
 ('Public Health', '080-1234-5005')
 on conflict (name) do nothing;
+
+-- Enable Realtime for complaints
+alter publication supabase_realtime add table public.complaints;
