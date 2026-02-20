@@ -153,18 +153,44 @@ export default function AdminDashboard() {
     const fetchAllData = async () => {
         setLoading(true);
         try {
-            // Fetch Complaints with user and dept info
-            const { data: complaintsData, error: compError } = await supabase
+            // Fetch Complaints with user and dept info - Robust against missing columns
+            let complaintsData;
+            let compError;
+
+            // Attempt to fetch with full user details
+            const { data: fullData, error: fullError } = await supabase
                 .from('complaints')
                 .select(`
-            *,
-            citizen:users!complaints_user_id_fkey(full_name, email),
-            department:departments(name),
-            attachments:media_attachments(*)
-        `)
+                    *,
+                    citizen:users!complaints_user_id_fkey(full_name, email, address, ward_number),
+                    department:departments(name),
+                    attachments:media_attachments(*)
+                `)
                 .order('created_at', { ascending: false });
 
-            if (compError) throw compError;
+            if (fullError) {
+                console.warn("Columns 'address' or 'ward_number' might be missing in users table, falling back to basic fields:", fullError.message);
+                // Fallback to fetching without 'address' and 'ward_number'
+                const { data: fallbackData, error: fallbackError } = await supabase
+                    .from('complaints')
+                    .select(`
+                        *,
+                        citizen:users!complaints_user_id_fkey(full_name, email),
+                        department:departments(name),
+                        attachments:media_attachments(*)
+                    `)
+                    .order('created_at', { ascending: false });
+
+                if (fallbackError) throw fallbackError;
+                complaintsData = fallbackData;
+                compError = null; // Clear error as fallback succeeded
+            } else {
+                complaintsData = fullData;
+                compError = null;
+            }
+
+            if (compError) throw compError; // If even fallback failed
+
             setComplaints(complaintsData || []);
 
             // Calculate basic stats
@@ -272,36 +298,143 @@ export default function AdminDashboard() {
         window.location.reload();
     };
 
-    const handleExportPDF = (complaint) => {
+    const handleExportPDF = async (complaint) => {
         try {
             const doc = new jsPDF();
             const adminName = user?.full_name || 'Admin User';
             const exportTime = new Date().toLocaleString();
+
+            // Helper to convert URL to Base64
+            const getBase64ImageFromURL = (url) => {
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.setAttribute("crossOrigin", "anonymous");
+                    img.onload = () => {
+                        const canvas = document.createElement("canvas");
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, 0, 0);
+                        resolve(canvas.toDataURL("image/png"));
+                    };
+                    img.onerror = (error) => reject(error);
+                    img.src = url;
+                });
+            };
+
+            const getMunicipalCorporation = (complaint, coords) => {
+                const address = (complaint.formatted_address || complaint.citizen?.address || "").toLowerCase();
+
+                // Try to get from coordinates first if provided
+                if (coords && coords !== 'Not Available' && coords !== 'Located via GIS') {
+                    const [lat, lng] = coords.split(',').map(c => parseFloat(c.trim()));
+
+                    // Bangalore approx range
+                    if (lat > 12.8 && lat < 13.1 && lng > 77.4 && lng < 77.8) {
+                        return "Bruhat Bengaluru Mahanagara Palike (BBMP)";
+                    }
+                    // Mumbai approx range
+                    if (lat > 18.8 && lat < 19.3 && lng > 72.7 && lng < 73.1) {
+                        return "Brihanmumbai Municipal Corporation (BMC)";
+                    }
+                    // Delhi approx range
+                    if (lat > 28.4 && lat < 28.9 && lng > 76.8 && lng < 77.4) {
+                        return "Municipal Corporation of Delhi (MCD)";
+                    }
+                }
+
+                if (address.includes("bangalore") || address.includes("bengaluru")) {
+                    return "Bruhat Bengaluru Mahanagara Palike (BBMP)";
+                }
+                if (address.includes("mumbai")) {
+                    return "Brihanmumbai Municipal Corporation (BMC)";
+                }
+                if (address.includes("delhi")) {
+                    return "Municipal Corporation of Delhi (MCD)";
+                }
+
+                // Extract city name if possible
+                const cityMatch = address.match(/[^,]+(?=\s*,\s*(?:karnataka|maharashtra|delhi|india|$))/i);
+                if (cityMatch) {
+                    return `Municipal Corporation of ${cityMatch[0].trim().toUpperCase()}`;
+                }
+
+                return "Local Municipal Authority";
+            };
+
+            // Helper to extract coordinates (handles WKT, GeoJSON, and WKB hex)
+            const extractCoords = (location) => {
+                if (!location) return 'Not Available';
+
+                // Handle GeoJSON format
+                if (typeof location === 'object' && location.coordinates) {
+                    return `${location.coordinates[1].toFixed(6)}, ${location.coordinates[0].toFixed(6)}`;
+                }
+
+                // Handle PostGIS string format "POINT(lng lat)"
+                if (typeof location === 'string') {
+                    if (location.startsWith('POINT')) {
+                        const match = location.match(/POINT\s*\(\s*([-\d.eE]+)\s+([-\d.eE]+)\s*\)/i);
+                        if (match) return `${parseFloat(match[2]).toFixed(6)}, ${parseFloat(match[1]).toFixed(6)}`;
+                    }
+                    // Handle WKB (Hex) Point format
+                    else if (location.startsWith('0101')) {
+                        try {
+                            const hex = location;
+                            const isSRID = hex.substring(2, 10).toLowerCase() === '01000020';
+                            const offset = isSRID ? 18 : 10;
+
+                            const hexToFloat = (h) => {
+                                const bytes = new Uint8Array(h.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                                const view = new DataView(bytes.buffer);
+                                return view.getFloat64(0, true);
+                            };
+
+                            const lng = hexToFloat(hex.substring(offset, offset + 16));
+                            const lat = hexToFloat(hex.substring(offset + 16, offset + 32));
+                            if (!isNaN(lat) && !isNaN(lng)) return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                        } catch (e) {
+                            console.error("Failed to parse WKB:", e);
+                        }
+                    }
+                }
+                return 'Located via GIS';
+            };
+
+            const coords = extractCoords(complaint.location);
+            const corporation = getMunicipalCorporation(complaint, coords);
 
             // Title & Branding
             doc.setFontSize(22);
             doc.setTextColor(30, 64, 175); // Indigo-900
             doc.text("AdminResolve Municipal", 14, 20);
 
-            doc.setFontSize(12);
-            doc.setTextColor(100);
-            doc.text("Municipal Corporation Report", 14, 30);
+            doc.setFontSize(14);
+            doc.setTextColor(79, 70, 229); // Indigo-600
+            doc.text(corporation, 14, 30);
 
-            doc.line(14, 37, 196, 37);
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text("Official Complaint Investigation Report", 14, 37);
+
+            doc.line(14, 42, 196, 42);
 
             // Core Content Table
             autoTable(doc, {
-                startY: 45,
+                startY: 50,
                 head: [['Field', 'Information']],
                 body: [
                     ['Complaint ID', `#${complaint.id.slice(0, 8)}`],
-                    ['Report Type', 'Official Complaint Filing'],
-                    ['Citizen Name', complaint.citizen?.full_name || 'Anonymous'],
+                    ['Municipal Authority', corporation],
+                    ['Ward Number', complaint.citizen?.ward_number || 'N/A'],
                     ['Category', complaint.category],
                     ['Department', complaint.department?.name || 'Unassigned'],
+                    ['Citizen Name', complaint.citizen?.full_name || 'Anonymous'],
                     ['Status', complaint.status.toUpperCase()],
                     ['Priority', complaint.priority.toUpperCase()],
-                    ['Location (Address)', complaint.formatted_address || 'No Address Provided'],
+                    ['Coordinates', coords],
+                    ['Incident Address', complaint.formatted_address || 'No Address Provided'],
+                    ['Registered Address', complaint.citizen?.address || 'Not Provided'],
                     ['Date of Filing', new Date(complaint.created_at).toLocaleString()],
                     ['SLA Deadline', new Date(complaint.sla_deadline).toLocaleString()],
                 ],
@@ -309,17 +442,37 @@ export default function AdminDashboard() {
                 headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
             });
 
+            let currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 150;
+
+            // Incident Evidence (Image)
+            if (complaint.attachments && complaint.attachments.length > 0) {
+                try {
+                    const imageUrl = complaint.attachments[0].file_url;
+                    const base64Img = await getBase64ImageFromURL(imageUrl);
+
+                    doc.setFontSize(14);
+                    doc.setTextColor(30, 64, 175);
+                    doc.text("Incident Evidence:", 14, currentY + 15);
+
+                    // Add image - maintaining aspect ratio roughly
+                    // jsPDF addImage(data, type, x, y, width, height)
+                    doc.addImage(base64Img, 'PNG', 14, currentY + 20, 60, 60);
+                    currentY += 80;
+                } catch (imgError) {
+                    console.error("Error adding image to PDF:", imgError);
+                }
+            }
+
             // Description
-            const finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 150;
             doc.setFontSize(14);
             doc.setTextColor(30, 64, 175);
-            doc.text("Issue Description:", 14, finalY + 15);
+            doc.text("Issue Description:", 14, currentY + 15);
 
             doc.setFontSize(11);
             doc.setTextColor(50);
             const descriptionText = complaint.description || "No description provided.";
             const splitDescription = doc.splitTextToSize(descriptionText, 170);
-            doc.text(splitDescription, 14, finalY + 25);
+            doc.text(splitDescription, 14, currentY + 25);
 
             // Footer Metadata
             doc.setFontSize(10);
