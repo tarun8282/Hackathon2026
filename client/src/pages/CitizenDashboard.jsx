@@ -3,56 +3,102 @@ import {
     Map as MapIcon,
     PlusCircle,
     FileText,
-    Settings,
     Bell,
-    User,
     ShieldAlert,
     LogOut,
     Menu,
-    X,
     ChevronRight,
-    Clock
+    Search,
+    Mic,
+    ImagePlus,
+    MapPin,
+    Send,
+    Loader2,
+    CheckCircle2,
+    Clock,
+    AlertTriangle,
+    X,
+    User
 } from 'lucide-react';
+import { categorizeIssue } from '../services/geminiService';
 
 export default function CitizenDashboard() {
-    const [activeTab, setActiveTab] = useState('new');
+    const [activeTab, setActiveTab] = useState('dashboard');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [complaintText, setComplaintText] = useState('');
+    const [aiResult, setAiResult] = useState(null);
 
     const handleLogout = () => {
         localStorage.removeItem('user_session');
         window.location.reload();
     };
 
+    const handleAnalyze = async () => {
+        if (!complaintText.trim()) return;
+        setIsAnalyzing(true);
+        // Simulate delay for effect
+        await new Promise(r => setTimeout(r, 1500));
+
+        try {
+            const result = await categorizeIssue(complaintText);
+            setAiResult(result);
+        } catch (error) {
+            console.error("Analysis failed", error);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
     const navItems = [
-        { id: 'new', label: 'File an Issue', icon: <PlusCircle size={20} /> },
-        { id: 'my', label: 'My History', icon: <FileText size={20} /> },
-        { id: 'map', label: 'Local Map', icon: <MapIcon size={20} /> },
+        { id: 'dashboard', label: 'Dashboard', icon: <FileText size={20} /> },
+        { id: 'raise', label: 'Raise Complaint', icon: <PlusCircle size={20} /> },
+        { id: 'map', label: 'City Map', icon: <MapIcon size={20} /> },
+        { id: 'history', label: 'My Complaints', icon: <Clock size={20} /> },
+    ];
+
+    const stats = [
+        { label: 'Total Reports', value: '12', color: 'from-blue-500 to-blue-600', icon: FileText },
+        { label: 'In Progress', value: '3', color: 'from-amber-500 to-amber-600', icon: Clock },
+        { label: 'Resolved', value: '8', color: 'from-green-500 to-green-600', icon: CheckCircle2 },
+        { label: 'Escalated', value: '1', color: 'from-purple-500 to-purple-600', icon: AlertTriangle },
     ];
 
     return (
-        <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+        <div className="flex h-screen bg-slate-50 font-sans text-slate-800 selection:bg-primary-100 selection:text-primary-900">
             {/* Mobile Backdrop */}
             {isSidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-slate-900/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+                    className="fixed inset-0 bg-slate-900/60 z-40 lg:hidden backdrop-blur-sm transition-opacity"
                     onClick={() => setIsSidebarOpen(false)}
                 />
             )}
 
             {/* Sidebar */}
             <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-                <div className="h-full flex flex-col shadow-xl lg:shadow-none">
-                    <div className="p-6 border-b border-slate-50">
-                        <h1 className="text-2xl font-black text-primary-600 flex items-center gap-2 tracking-tight">
-                            <ShieldAlert size={32} className="fill-primary-50" />
-                            CitizenCare
-                        </h1>
+                fixed inset-y-0 left-0 z-50 w-72 bg-white/90 backdrop-blur-xl border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
+                ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            `}>
+                <div className="h-full flex flex-col">
+                    <div className="p-8 pb-4">
+                        <div className="flex items-center gap-3 text-primary-700 mb-8">
+                            <div className="p-2.5 bg-gradient-to-br from-primary-50 to-primary-100 rounded-xl shadow-sm border border-primary-200/50">
+                                <ShieldAlert size={28} className="fill-current" />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-heading font-bold leading-none tracking-tight">SmartResolve</h1>
+                                <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">CITIZEN PORTAL</span>
+                            </div>
+                        </div>
+
+                        <div className="px-5 py-4 bg-primary-50/50 rounded-2xl border border-primary-100 mb-6 relative overflow-hidden group">
+                            <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary-100/50 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700"></div>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Welcome back,</p>
+                            <p className="font-heading font-black text-xl text-primary-700 relative z-10">Alex Johnson</p>
+                        </div>
                     </div>
 
-                    <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto font-medium">
+                    <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
                         {navItems.map((item) => (
                             <button
                                 key={item.id}
@@ -60,136 +106,312 @@ export default function CitizenDashboard() {
                                     setActiveTab(item.id);
                                     setIsSidebarOpen(false);
                                 }}
-                                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl transition-all duration-200 ${activeTab === item.id
-                                        ? 'bg-primary-600 text-white shadow-lg shadow-primary-200'
-                                        : 'text-slate-500 hover:bg-primary-50 hover:text-primary-600'
+                                className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl transition-all duration-300 group relative overflow-hidden ${activeTab === item.id
+                                    ? 'bg-primary-50 text-primary-700 font-bold shadow-sm ring-1 ring-primary-100'
+                                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 font-medium'
                                     }`}
                             >
-                                <div className="flex items-center gap-3">
-                                    {item.icon}
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 bg-primary-600 rounded-r-full transition-transform duration-300 ${activeTab === item.id ? 'scale-y-100' : 'scale-y-0'}`}></div>
+                                <div className="flex items-center gap-3 relative z-10">
+                                    <span className={`transition-colors duration-300 ${activeTab === item.id ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                                        {item.icon}
+                                    </span>
                                     {item.label}
                                 </div>
-                                {activeTab === item.id && <ChevronRight size={16} />}
+                                {activeTab === item.id && <ChevronRight size={16} className="text-primary-500" />}
                             </button>
                         ))}
                     </nav>
 
-                    <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+                    <div className="p-4 mt-auto border-t border-slate-100">
                         <button
                             onClick={handleLogout}
-                            className="w-full flex items-center gap-3 px-4 py-3.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 text-sm font-bold"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all duration-200 font-medium group"
                         >
-                            <LogOut size={20} /> Sign Out
+                            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-400 group-hover:bg-red-100 group-hover:text-red-500 transition-colors">
+                                <LogOut size={16} />
+                            </div>
+                            Sign Out
                         </button>
                     </div>
                 </div>
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+            <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50 relative">
+                <div className="absolute inset-0 bg-hero-pattern opacity-100 pointer-events-none"></div>
+
                 {/* Header */}
-                <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-4 lg:px-10 sticky top-0 z-30">
+                <header className="h-20 flex items-center justify-between px-6 lg:px-10 bg-white/70 backdrop-blur-xl border-b border-white/50 sticky top-0 z-30 shadow-sm relative">
                     <div className="flex items-center gap-4">
                         <button
                             onClick={() => setIsSidebarOpen(true)}
-                            className="p-2.5 bg-slate-100 text-slate-600 rounded-xl lg:hidden hover:bg-slate-200 transition-colors"
+                            className="p-2 text-slate-500 hover:bg-slate-100 rounded-xl lg:hidden transition-colors"
                         >
                             <Menu size={24} />
                         </button>
-                        <div>
-                            <h2 className="text-xl lg:text-2xl font-bold text-slate-800 tracking-tight">
-                                {navItems.find(i => i.id === activeTab)?.label}
-                            </h2>
-                            <p className="text-xs lg:text-sm text-slate-500 font-medium hidden sm:block">
-                                SmartResolve AI Platform • Geo-Enabled Civic Intelligence
-                            </p>
-                        </div>
+                        <h2 className="text-xl font-heading font-extrabold text-slate-800 tracking-tight">
+                            {navItems.find(i => i.id === activeTab)?.label}
+                        </h2>
                     </div>
 
-                    <div className="flex items-center gap-3 lg:gap-4">
-                        <button className="p-2.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all hidden sm:flex">
-                            <Bell size={22} />
+                    <div className="flex items-center gap-4">
+                        <button className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-full transition-all relative group">
+                            <Bell size={20} className="group-hover:animate-swing" />
+                            <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white ring-2 ring-red-500/20 animate-pulse"></span>
                         </button>
-                        <div className="h-10 w-px bg-slate-200 hidden sm:block"></div>
-                        <div className="flex items-center gap-3 pl-2">
-                            <div className="text-right hidden sm:block">
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Citizen</p>
-                                <p className="text-sm font-black text-slate-800">C. User</p>
-                            </div>
-                            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-black text-xl shadow-lg shadow-primary-200 ring-4 ring-primary-50">
-                                C
-                            </div>
+                        <div className="w-10 h-10 rounded-full ring-2 ring-white shadow-lg overflow-hidden cursor-pointer hover:ring-primary-200 transition-all">
+                            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Alex&backgroundColor=c0aede" alt="Profile" className="w-full h-full object-cover" />
                         </div>
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto p-4 lg:p-10 space-y-8 bg-slate-50/50">
-                    <div className="max-w-5xl mx-auto space-y-8">
-                        {activeTab === 'new' && (
-                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <div className="bg-white p-6 lg:p-10 rounded-3xl shadow-sm border border-slate-200 ring-1 ring-slate-100 hover:shadow-md transition-shadow">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
-                                        <div>
-                                            <h3 className="text-xl lg:text-2xl font-black text-slate-800 mb-1">New Complaint</h3>
-                                            <p className="text-slate-500 text-sm font-medium">Describe the issue and our AI will categorize it automatically.</p>
-                                        </div>
-                                        <div className="px-4 py-2 bg-amber-50 rounded-full border border-amber-100 flex items-center gap-2 text-amber-700 text-xs font-bold w-fit">
-                                            <Clock size={14} /> AI Processing Enabled
-                                        </div>
-                                    </div>
+                {/* Dashboard Viewport */}
+                <div className="flex-1 overflow-y-auto p-6 lg:p-10 scroll-smooth relative z-10">
+                    <div className="max-w-6xl mx-auto space-y-8">
 
-                                    <textarea
-                                        className="w-full p-5 lg:p-8 h-48 lg:h-64 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-50 outline-none mb-6 transition-all text-slate-700 font-medium text-lg leading-relaxed placeholder:text-slate-400"
-                                        placeholder="e.g. There is a huge pothole at the intersection of MG Road and 5th Cross. It's causing heavy traffic and water logging..."
-                                    />
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                {/* Stats Grid */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
+                                    {stats.map((stat, i) => (
+                                        <div key={i} className="bg-white/60 backdrop-blur-md p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all group hover:-translate-y-1 duration-300">
+                                            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${stat.color} mb-4 flex items-center justify-center text-white shadow-lg shadow-gray-200 group-hover:scale-110 transition-transform duration-300`}>
+                                                <stat.icon size={20} />
+                                            </div>
+                                            <span className="block text-3xl font-heading font-bold text-slate-800 mb-1">{stat.value}</span>
+                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{stat.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                                        <button className="px-6 py-4 rounded-2xl border-2 border-slate-100 font-bold text-slate-600 hover:border-primary-200 hover:bg-primary-50 transition-all flex items-center justify-center gap-2">
-                                            <MapIcon size={20} /> Detect My Location
+                                {/* CTA Section - Enhanced Vibrancy */}
+                                <div className="bg-gradient-to-r from-[#1e40af] to-[#3b82f6] rounded-[2rem] p-8 md:p-12 text-white shadow-2xl shadow-blue-900/20 relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-white/5 rounded-full blur-3xl transform translate-x-1/3 -translate-y-1/3 group-hover:scale-110 transition-transform duration-1000"></div>
+                                    <div className="absolute bottom-0 left-0 w-64 h-64 bg-black/10 rounded-full blur-2xl transform -translate-x-1/2 translate-y-1/2"></div>
+
+                                    <div className="relative z-10 max-w-lg">
+                                        <div className="px-3 py-1 bg-blue-500/30 border border-blue-400/30 rounded-full w-fit text-xs font-bold uppercase tracking-wider mb-4 backdrop-blur-sm">
+                                            AI-Powered Civic Assistant
+                                        </div>
+                                        <h3 className="text-3xl md:text-4xl font-heading font-bold mb-4 text-glow leading-tight">Spot an issue in <br />your neighborhood?</h3>
+                                        <p className="text-blue-100 mb-8 leading-relaxed font-medium text-lg opacity-90">
+                                            Report potholes, garbage, or street light issues instantly. Our AI will analyze and route it to the right department.
+                                        </p>
+                                        <button
+                                            onClick={() => setActiveTab('raise')}
+                                            className="px-8 py-4 bg-white text-blue-700 rounded-xl font-bold text-lg hover:bg-blue-50 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] flex items-center gap-2 transform active:scale-95"
+                                        >
+                                            <PlusCircle size={22} />
+                                            Raise New Complaint
                                         </button>
-                                        <div className="px-6 py-4 rounded-2xl bg-slate-50 border-2 border-slate-100 text-slate-400 text-sm font-medium flex items-center justify-center italic">
-                                            GPS Coord: --, --
-                                        </div>
                                     </div>
+                                </div>
 
-                                    <button className="w-full py-5 bg-primary-600 text-white rounded-2xl font-black text-xl hover:bg-primary-700 active:scale-[0.98] transition-all shadow-xl shadow-primary-200">
-                                        Analyze & Submit with AI
-                                    </button>
+                                {/* Recent Activity - Glassmorphism */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-6">
+                                        <h3 className="text-xl font-heading font-extrabold text-slate-800">Recent Activity</h3>
+                                        <button onClick={() => setActiveTab('history')} className="text-sm font-bold text-primary-600 hover:text-primary-700 hover:underline decoration-2 underline-offset-4">View All</button>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {[1, 2, 3].map((_, i) => (
+                                            <div key={i} className="bg-white/80 p-5 rounded-2xl border border-white/50 shadow-sm hover:shadow-md hover:border-primary-100 transition-all cursor-pointer group flex items-center justify-between">
+                                                <div className="flex items-center gap-5">
+                                                    <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors border border-slate-100">
+                                                        <FileText size={24} />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-800 text-lg group-hover:text-primary-600 transition-colors">Street Light Malfunction</h4>
+                                                        <p className="text-sm text-slate-500 font-medium mt-1">Koramangala 4th Block • 2 days ago</p>
+                                                    </div>
+                                                </div>
+                                                <span className="px-4 py-1.5 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-100 shadow-sm">
+                                                    In Progress
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'my' && (
-                            <div className="grid gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-2xl font-black text-slate-800">My Reports</h3>
-                                    <p className="text-sm font-bold text-slate-400">Total: 0</p>
-                                </div>
-                                <div className="bg-white p-12 lg:p-20 rounded-3xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center space-y-4 ring-1 ring-slate-100">
-                                    <div className="p-6 bg-slate-50 rounded-full text-slate-300">
-                                        <FileText size={64} strokeWidth={1.5} />
+                        {activeTab === 'raise' && (
+                            <div className="max-w-4xl mx-auto animate-in slide-in-from-right-8 duration-700">
+                                <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] p-6 md:p-10 shadow-xl border border-white/50 relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary-400 via-purple-500 to-primary-600"></div>
+
+                                    <div className="flex items-center gap-4 mb-8 text-slate-800">
+                                        <div className="p-3 bg-primary-50 text-primary-600 rounded-2xl shadow-sm border border-primary-100">
+                                            <Mic size={28} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-2xl font-heading font-extrabold tracking-tight">Describe the Issue</h3>
+                                            <p className="text-sm font-medium text-slate-500 mt-1 flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                                AI Categorization Active
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="text-xl font-bold text-slate-800">No active complaints</p>
-                                        <p className="text-slate-400 max-w-xs mt-2 font-medium">Any issues you file will appear here. Track their progress and SLA status in real-time.</p>
+
+                                    <div className="relative mb-8 group">
+                                        <textarea
+                                            value={complaintText}
+                                            onChange={(e) => setComplaintText(e.target.value)}
+                                            placeholder="E.g., There is a large pothole near the main market entrance causing traffic congestion..."
+                                            className="w-full h-52 p-6 bg-slate-50/50 rounded-2xl border-2 border-slate-200 focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-50 transition-all resize-none text-slate-700 placeholder:text-slate-400 font-medium text-lg leading-relaxed shadow-inner"
+                                        />
+                                        <button className="absolute bottom-4 right-4 p-3 bg-white text-slate-400 hover:text-primary-600 rounded-xl border border-slate-200 shadow-sm transition-colors hover:scale-105 active:scale-95">
+                                            <Mic size={20} />
+                                        </button>
                                     </div>
-                                    <button onClick={() => setActiveTab('new')} className="mt-4 px-8 py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-colors">
-                                        Report an Issue
-                                    </button>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                                        <div className="p-6 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-3 hover:border-primary-400 hover:bg-primary-50/50 transition-all cursor-pointer h-40 group bg-slate-50/50">
+                                            <div className="p-3 bg-white rounded-full shadow-sm group-hover:scale-110 transition-transform">
+                                                <ImagePlus size={24} className="text-slate-500 group-hover:text-primary-500" />
+                                            </div>
+                                            <span className="text-sm font-bold group-hover:text-primary-600">Upload Photo Evidence</span>
+                                        </div>
+                                        <button className="p-6 bg-white border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-500 gap-3 hover:border-primary-400 hover:text-primary-600 hover:shadow-lg hover:shadow-primary-50 transition-all h-40 group relative overflow-hidden">
+                                            <div className="absolute inset-0 bg-gradient-to-br from-primary-50/0 to-primary-50/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                            <div className="p-3 bg-slate-50 rounded-full shadow-sm group-hover:bg-white z-10">
+                                                <MapPin size={24} />
+                                            </div>
+                                            <span className="text-sm font-bold z-10">Auto-Detect Location</span>
+                                        </button>
+                                    </div>
+
+                                    {!aiResult ? (
+                                        <button
+                                            onClick={handleAnalyze}
+                                            disabled={isAnalyzing || !complaintText}
+                                            className="w-full py-5 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-2xl font-bold text-xl hover:from-primary-700 hover:to-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-primary-200 hover:shadow-2xl hover:shadow-primary-300 active:scale-[0.98] flex items-center justify-center gap-3"
+                                        >
+                                            {isAnalyzing ? (
+                                                <>
+                                                    <Loader2 size={24} className="animate-spin" />
+                                                    Processing Intelligence...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Send size={22} />
+                                                    Submit Complaint
+                                                </>
+                                            )}
+                                        </button>
+                                    ) : (
+                                        <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-8 animate-in fade-in zoom-in-95 duration-500 border border-slate-200 shadow-xl relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 p-8 opacity-5">
+                                                <CheckCircle2 size={120} />
+                                            </div>
+                                            <div className="flex items-center justify-between mb-6 relative z-10">
+                                                <h4 className="font-heading font-extrabold text-2xl text-slate-800 flex items-center gap-3">
+                                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600">
+                                                        <CheckCircle2 size={20} />
+                                                    </span>
+                                                    AI Analysis Complete
+                                                </h4>
+                                                <button onClick={() => setAiResult(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
+                                            </div>
+
+                                            <div className="grid gap-4 relative z-10">
+                                                <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Category</span>
+                                                    <span className="text-sm font-bold text-primary-700 bg-primary-50 px-4 py-1.5 rounded-full border border-primary-100">{aiResult.category || "Infrastructure"}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Department</span>
+                                                    <span className="text-sm font-bold text-slate-800">{aiResult.department || "Public Works"}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                                    <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Priority</span>
+                                                    <span className={`text-sm font-bold px-4 py-1.5 rounded-full border ${aiResult.priority === 'High'
+                                                        ? 'bg-red-50 text-red-700 border-red-100'
+                                                        : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                        }`}>
+                                                        {aiResult.priority || "Medium"}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <button className="w-full mt-8 py-5 bg-green-600 text-white rounded-2xl font-bold text-xl hover:bg-green-700 transition-all shadow-xl shadow-green-200 hover:shadow-green-300 flex items-center justify-center gap-3 transform active:scale-[0.98]">
+                                                <CheckCircle2 size={24} />
+                                                Confirm & File Report
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'map' && (
-                            <div className="h-[calc(100vh-280px)] min-h-[500px] bg-slate-200 rounded-3xl overflow-hidden relative shadow-inner border border-slate-300 animate-in zoom-in-95 duration-500 ring-1 ring-slate-200">
-                                <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-slate-100/50 backdrop-blur-sm z-10">
-                                    <MapIcon size={80} className="text-slate-300 mb-6 drop-shadow-sm" />
-                                    <h3 className="text-2xl font-black text-slate-800 mb-2">Geo-Intelligence Map</h3>
-                                    <p className="text-slate-500 max-w-md font-medium">Displaying reported issues across your city. Markers color-coded by department and status.</p>
-                                    <div className="mt-8 px-6 py-2 bg-white rounded-full text-xs font-black uppercase tracking-widest text-slate-400 border border-slate-200">
-                                        Ready for Leaflet Integration
+                            <div className="h-[700px] bg-white rounded-[2rem] border border-slate-200 p-2 shadow-xl flex flex-col animate-in zoom-in-95 duration-700">
+                                <div className="p-4 flex items-center gap-4 overflow-x-auto pb-4 scrollbar-hide">
+                                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full border border-slate-200">
+                                        <Filter size={16} className="text-slate-500" />
+                                        <span className="text-xs font-bold text-slate-500 uppercase">Filters</span>
+                                    </div>
+                                    <select className="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 transition-all shadow-sm cursor-pointer hover:border-slate-300">
+                                        <option>Top Categories</option>
+                                        <option>Roads</option>
+                                        <option>Sanitation</option>
+                                    </select>
+                                    <select className="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 transition-all shadow-sm cursor-pointer hover:border-slate-300">
+                                        <option>Status: Open</option>
+                                        <option>Status: In Progress</option>
+                                        <option>Status: Resolved</option>
+                                    </select>
+                                </div>
+                                <div className="flex-1 bg-slate-100 rounded-[1.5rem] relative overflow-hidden group">
+                                    <div className="absolute inset-0 bg-[url('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png')] bg-cover opacity-60 grayscale-[20%]"></div>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-t from-slate-900/10 to-transparent">
+                                        <div className="bg-white/90 backdrop-blur-lg p-8 rounded-[2rem] shadow-2xl text-center border border-white/60 max-w-md mx-6 transform transition-all hover:scale-105 duration-500">
+                                            <div className="w-20 h-20 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-3xl rotate-3 flex items-center justify-center mx-auto mb-6 shadow-xl shadow-primary-500/30">
+                                                <MapIcon size={40} />
+                                            </div>
+                                            <h3 className="text-2xl font-heading font-extrabold text-slate-800 mb-3">Geo-Intelligence Map</h3>
+                                            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">Interactive visualization of civic issues. <br />Toggle heatmap mode to identify high-density zones.</p>
+                                            <button className="px-8 py-4 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-all shadow-lg hover:shadow-xl uppercase tracking-wider flex items-center gap-2 mx-auto">
+                                                <MapPin size={16} /> Enable Location Services
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'history' && (
+                            <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
+                                <h2 className="text-2xl font-heading font-extrabold text-slate-800 px-2">My Reports</h2>
+                                {[1, 2, 3, 4].map((item, i) => (
+                                    <div key={i} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 hover:shadow-lg hover:border-primary-200 transition-all group cursor-pointer relative overflow-hidden">
+                                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-primary-400 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        <div className="flex items-start justify-between mb-5">
+                                            <div className="flex gap-5">
+                                                <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-110 transition-transform">
+                                                    <AlertTriangle size={26} />
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-heading font-bold text-slate-800 text-xl group-hover:text-primary-700 transition-colors">Garbage Dump on 5th Main</h4>
+                                                    <p className="text-sm text-slate-500 font-bold mt-1 uppercase tracking-wide opacity-70">Public Sanitation • Feb 18</p>
+                                                </div>
+                                            </div>
+                                            <span className="px-4 py-1.5 bg-green-100 text-green-700 border border-green-200 rounded-full text-xs font-black uppercase tracking-widest shadow-sm">
+                                                Resolved
+                                            </span>
+                                        </div>
+                                        <div className="pl-20">
+                                            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 text-sm text-slate-600 font-medium leading-relaxed mb-5 italic">
+                                                "The garbage truck has not visited this street for 3 days. There is a pile up causing bad odor..."
+                                            </div>
+                                            <div className="flex items-center gap-8 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                <span className="flex items-center gap-2 text-green-600 bg-green-50 px-3 py-1 rounded-lg"><Clock size={14} /> SLA: Met</span>
+                                                <span className="flex items-center gap-2 text-primary-600 cursor-pointer hover:underline decoration-2 underline-offset-4 transition-all">View Details <ChevronRight size={14} /></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -197,4 +419,11 @@ export default function CitizenDashboard() {
             </main>
         </div>
     );
+}
+
+// Icon helper
+function Filter({ size, className }) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+    )
 }
