@@ -22,10 +22,14 @@ import {
     User,
     Sparkles,
     ShieldCheck,
-    ArrowRight
+    ArrowRight,
+    TrendingUp
 } from 'lucide-react';
 import { categorizeIssue } from '../services/geminiService';
 import MapPicker from '../components/MapPicker';
+import { MapContainer, TileLayer } from 'react-leaflet';
+import HeatmapLayer from '../components/HeatmapLayer';
+import 'leaflet/dist/leaflet.css';
 
 export default function CitizenDashboard() {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -48,6 +52,7 @@ export default function CitizenDashboard() {
         resolved: 0,
         escalated: 0
     });
+    const [allComplaints, setAllComplaints] = useState([]);
     const recognitionRef = useRef(null);
     const isListeningRef = useRef(false);
 
@@ -57,6 +62,7 @@ export default function CitizenDashboard() {
         fetchDepartments();
         if (user) {
             fetchData();
+            fetchAllComplaints();
         }
         return () => {
             if (recognitionRef.current) {
@@ -64,6 +70,73 @@ export default function CitizenDashboard() {
             }
         };
     }, []);
+
+    const fetchAllComplaints = async () => {
+        console.log("Fetching all complaints for heatmap...");
+        const { data, error } = await supabase
+            .from('complaints')
+            .select('location, category, priority');
+
+        if (error) {
+            console.error("Error fetching heatmap data:", error);
+            return;
+        }
+
+        console.log(`Fetched ${data?.length || 0} complaints. Raw samples:`, data?.slice(0, 2));
+
+        if (data) {
+            const points = data.map(c => {
+                let lat, lng;
+                if (!c.location) return null;
+
+                // Handle GeoJSON format
+                if (typeof c.location === 'object' && c.location.coordinates) {
+                    lng = c.location.coordinates[0];
+                    lat = c.location.coordinates[1];
+                }
+                // Handle PostGIS string format "POINT(lng lat)"
+                else if (typeof c.location === 'string') {
+                    const match = c.location.match(/POINT\s*\(\s*([-\d.eE]+)\s+([-\d.eE]+)\s*\)/i);
+                    if (match) {
+                        lng = parseFloat(match[1]);
+                        lat = parseFloat(match[2]);
+                    } else if (c.location.startsWith('0101')) {
+                        // Parse WKB (Hex) Point format
+                        try {
+                            const hex = c.location;
+                            const isSRID = hex.substring(2, 10).toLowerCase() === '01000020';
+                            const offset = isSRID ? 18 : 10;
+
+                            const hexToFloat = (h) => {
+                                // WKB is little-endian (01 prefix)
+                                const bytes = new Uint8Array(h.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                                const view = new DataView(bytes.buffer);
+                                return view.getFloat64(0, true);
+                            };
+
+                            lng = hexToFloat(hex.substring(offset, offset + 16));
+                            lat = hexToFloat(hex.substring(offset + 16, offset + 32));
+                        } catch (e) {
+                            console.error("Failed to parse WKB:", e);
+                        }
+                    }
+                }
+
+                if (lat !== undefined && lng !== undefined && !isNaN(lat) && !isNaN(lng)) {
+                    let intensity = 0.4; // Low priority -> Yellow
+                    const p = c.priority?.toLowerCase();
+                    if (p === 'medium') intensity = 0.6; // Medium -> Gold/Orange
+                    if (p === 'high') intensity = 0.8; // High -> Orange/Red
+                    if (p === 'emergency') intensity = 1.0; // Emergency -> Pure Red
+                    return [lat, lng, intensity];
+                }
+                return null;
+            }).filter(p => p !== null);
+
+            console.log("Processed heatmap points:", points);
+            setAllComplaints(points);
+        }
+    };
 
     const fetchData = async () => {
         const { data, error } = await supabase
@@ -244,6 +317,8 @@ export default function CitizenDashboard() {
             }]);
 
             setIsSuccess(true);
+            fetchData(); // Refresh personal stats
+            fetchAllComplaints(); // Refresh global heatmap
             setTimeout(() => {
                 setIsSuccess(false);
                 setAiResult(null);
@@ -621,36 +696,51 @@ export default function CitizenDashboard() {
                         )}
 
                         {activeTab === 'map' && (
-                            <div className="h-[700px] bg-white rounded-4xl border border-slate-200 p-2 shadow-xl flex flex-col animate-in zoom-in-95 duration-700">
-                                <div className="p-4 flex items-center gap-4 overflow-x-auto pb-4 scrollbar-hide">
-                                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full border border-slate-200">
-                                        <Filter size={16} className="text-slate-500" />
-                                        <span className="text-xs font-bold text-slate-500 uppercase">Filters</span>
-                                    </div>
-                                    <select className="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 transition-all shadow-sm cursor-pointer hover:border-slate-300">
-                                        <option>Top Categories</option>
-                                        <option>Roads</option>
-                                        <option>Sanitation</option>
-                                    </select>
-                                    <select className="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 transition-all shadow-sm cursor-pointer hover:border-slate-300">
-                                        <option>Status: Open</option>
-                                        <option>Status: In Progress</option>
-                                        <option>Status: Resolved</option>
-                                    </select>
-                                </div>
-                                <div className="flex-1 bg-slate-100 rounded-[1.5rem] relative overflow-hidden group">
-                                    <div className="absolute inset-0 bg-[url('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png')] bg-cover opacity-60 grayscale-[20%]"></div>
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-t from-slate-900/10 to-transparent">
-                                        <div className="bg-white/90 backdrop-blur-lg p-8 rounded-4xl shadow-2xl text-center border border-white/60 max-w-md mx-6 transform transition-all hover:scale-105 duration-500">
-                                            <div className="w-20 h-20 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-3xl rotate-3 flex items-center justify-center mx-auto mb-6 shadow-xl shadow-primary-500/30">
-                                                <MapIcon size={40} />
-                                            </div>
-                                            <h3 className="text-2xl font-heading font-extrabold text-slate-800 mb-3">Geo-Intelligence Map</h3>
-                                            <p className="text-slate-500 text-sm mb-8 font-medium leading-relaxed">Interactive visualization of civic issues. <br />Toggle heatmap mode to identify high-density zones.</p>
-                                            <button className="px-8 py-4 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-all shadow-lg hover:shadow-xl uppercase tracking-wider flex items-center gap-2 mx-auto">
-                                                <MapPin size={16} /> Enable Location Services
-                                            </button>
+                            <div className="h-[730px] bg-white rounded-[2.5rem] border border-slate-200 p-3 shadow-2xl flex flex-col animate-in zoom-in-95 duration-700 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1.5 bg-linear-to-r from-blue-400 via-indigo-500 to-purple-600 z-20"></div>
+
+                                <div className="p-4 flex items-center justify-between border-b border-slate-100 mb-2">
+                                    <div className="flex items-center gap-4 overflow-x-auto pb-1 scrollbar-hide">
+                                        <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full border border-slate-200">
+                                            <Filter size={16} className="text-slate-500" />
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-tight">Geo-Filters</span>
                                         </div>
+                                        <select className="px-5 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-bold text-slate-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100 transition-all shadow-sm cursor-pointer hover:border-slate-300">
+                                            <option>All Incidents</option>
+                                            <option>High Priority Only</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">
+                                        <div className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></div>
+                                        <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Live Heatmap Active</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex-1 rounded-3xl relative overflow-hidden border border-slate-100 shadow-inner z-10">
+                                    <MapContainer
+                                        center={allComplaints.length > 0 ? [allComplaints[0][0], allComplaints[0][1]] : [12.9716, 77.5946]}
+                                        zoom={allComplaints.length > 0 ? 15 : 13}
+                                        style={{ height: '100%', width: '100%' }}
+                                        className="opacity-100"
+                                    >
+                                        <TileLayer
+                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+                                        />
+                                        <HeatmapLayer points={allComplaints} />
+                                    </MapContainer>
+
+                                    {/* Floating Overlay Info */}
+                                    <div className="absolute bottom-6 left-6 z-1000 bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-2xl border border-white/60 max-w-xs transition-transform hover:scale-105 duration-500">
+                                        <div className="flex items-center gap-4 mb-3">
+                                            <div className="w-10 h-10 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 rotate-3">
+                                                <TrendingUp size={20} />
+                                            </div>
+                                            <h4 className="font-heading font-bold text-slate-800 tracking-tight">Density Analysis</h4>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                                            The heatmap reveals areas with high incident frequency. Red zones indicate urgent focus areas for municipal teams.
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -661,7 +751,7 @@ export default function CitizenDashboard() {
                                 <h2 className="text-2xl font-heading font-extrabold text-slate-800 px-2">My Reports</h2>
                                 {userComplaints.map((item, i) => (
                                     <div key={item.id} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 hover:shadow-lg hover:border-primary-200 transition-all group cursor-pointer relative overflow-hidden">
-                                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-primary-400 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-linear-to-b from-primary-400 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                         <div className="flex items-start justify-between mb-5">
                                             <div className="flex gap-5">
                                                 <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-110 transition-transform">
