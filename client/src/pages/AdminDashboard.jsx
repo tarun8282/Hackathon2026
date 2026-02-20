@@ -20,7 +20,14 @@ import {
     Bell,
     Mic,
     MicOff,
-    Loader2
+    Loader2,
+    X,
+    MapPin,
+    User,
+    Mail,
+    Calendar,
+    ExternalLink,
+    Camera
 } from 'lucide-react';
 import {
     Chart as ChartJS,
@@ -56,6 +63,7 @@ export default function AdminDashboard() {
     const [stats, setStats] = useState({ total: 0, open: 0, resolved: 0, breaches: 0 });
     const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedComplaint, setSelectedComplaint] = useState(null);
     const user = JSON.parse(localStorage.getItem('user_session'));
 
     useEffect(() => {
@@ -71,7 +79,8 @@ export default function AdminDashboard() {
                 .select(`
                     *,
                     citizen:users!complaints_user_id_fkey(full_name, email),
-                    department:departments(name)
+                    department:departments(name),
+                    attachments:media_attachments(*)
                 `)
                 .order('created_at', { ascending: false });
 
@@ -420,7 +429,11 @@ export default function AdminDashboard() {
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {complaints.map((item, i) => (
-                                                <tr key={item.id} className="hover:bg-indigo-50/30 transition-colors group">
+                                                <tr
+                                                    key={item.id}
+                                                    onClick={() => setSelectedComplaint(item)}
+                                                    className="hover:bg-indigo-50/50 transition-colors group cursor-pointer"
+                                                >
                                                     <td className="p-5 pl-8 font-mono text-xs font-bold text-slate-400 group-hover:text-indigo-500 transition-colors uppercase">
                                                         #{item.id.slice(0, 8)}
                                                     </td>
@@ -434,7 +447,7 @@ export default function AdminDashboard() {
                                                     </td>
                                                     <td className="p-5 text-sm font-medium text-slate-600">{item.category}</td>
                                                     <td className="p-5 text-sm font-medium text-slate-600">{item.department?.name || 'Unassigned'}</td>
-                                                    <td className="p-5">
+                                                    <td className="p-5" onClick={(e) => e.stopPropagation()}>
                                                         <select
                                                             value={item.status}
                                                             onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
@@ -458,7 +471,7 @@ export default function AdminDashboard() {
                                                             {new Date(item.sla_deadline).toLocaleDateString()}
                                                         </div>
                                                     </td>
-                                                    <td className="p-5 pr-8 text-right">
+                                                    <td className="p-5 pr-8 text-right" onClick={(e) => e.stopPropagation()}>
                                                         <select
                                                             className="text-[10px] font-bold bg-white border border-slate-200 rounded px-2 py-1 outline-none"
                                                             onChange={(e) => handleAssignStaff(item.id, e.target.value)}
@@ -494,6 +507,179 @@ export default function AdminDashboard() {
                     </div>
                 </div>
             </main>
+
+            {/* Detailed Complaint Modal */}
+            {selectedComplaint && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-10">
+                    <div
+                        className="absolute inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300"
+                        onClick={() => setSelectedComplaint(null)}
+                    ></div>
+
+                    <div className="relative w-full max-w-5xl h-full max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-white flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between p-8 border-b border-slate-100 shrink-0">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-linear-to-br from-indigo-500 to-blue-600 rounded-2xl shadow-lg shadow-indigo-100">
+                                    <ShieldAlert size={28} className="text-white" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-3">
+                                        <h2 className="text-2xl font-black text-slate-800 tracking-tight">Full Incident Report</h2>
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${selectedComplaint.status === 'resolved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                                            }`}>
+                                            {selectedComplaint.status}
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Reference: #{selectedComplaint.id}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setSelectedComplaint(null)}
+                                className="p-3 hover:bg-slate-100 rounded-2xl text-slate-400 hover:text-slate-600 transition-all border border-transparent hover:border-slate-200"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        {/* Modal Content - Scrollable */}
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+
+                                {/* Left Column: Media & Location */}
+                                <div className="lg:col-span-5 space-y-8">
+                                    {/* Image Section */}
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Incident Evidence</label>
+                                        <div className="aspect-square bg-slate-50 rounded-[2rem] border-2 border-slate-100 border-dashed overflow-hidden group flex items-center justify-center relative bg-indigo-50/10">
+                                            {selectedComplaint.attachments?.length > 0 ? (
+                                                <img
+                                                    src={selectedComplaint.attachments[0].file_url}
+                                                    alt="Incident"
+                                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                />
+                                            ) : (
+                                                <div className="text-center p-6">
+                                                    <Camera size={48} className="text-slate-300 mx-auto mb-4" />
+                                                    <p className="text-sm font-bold text-slate-400">No photos provided by citizen</p>
+                                                </div>
+                                            )}
+                                            <div className="absolute top-4 right-4 px-3 py-1.5 bg-white/90 backdrop-blur-md rounded-xl text-[10px] font-black text-slate-600 border border-white shadow-xl">
+                                                IMAGE_UPLOAD_01
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Location Map Placeholder */}
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Incident Location</label>
+                                        <div className="h-60 bg-slate-100 rounded-[2rem] border border-slate-200 relative overflow-hidden group flex items-center justify-center">
+                                            {/* Static Map Background Simulation */}
+                                            <div className="absolute inset-0 bg-[url('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png')] bg-cover opacity-60 grayscale-[20%]"></div>
+                                            <div className="relative z-10 p-4 bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white text-center min-w-[200px]">
+                                                <MapPin size={32} className="text-indigo-600 mx-auto mb-2 animate-bounce" />
+                                                <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Active Marker</p>
+                                                <p className="text-[10px] font-bold text-slate-500 mt-1">Coordinates Captured</p>
+                                            </div>
+                                            <div className="absolute bottom-4 left-4 right-4 p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between">
+                                                <div className="text-white">
+                                                    <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">GIS Mapping</p>
+                                                    <p className="text-[10px] font-mono text-slate-200">Point Captured: {selectedComplaint.location ? "Valid Point" : "Manual Entry"}</p>
+                                                </div>
+                                                <button className="p-2 bg-indigo-600 text-white rounded-lg"><ExternalLink size={14} /></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right Column: Details & Details */}
+                                <div className="lg:col-span-7 space-y-10">
+                                    {/* Title & Description */}
+                                    <div className="space-y-6">
+                                        <div>
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Subject</label>
+                                            <h3 className="text-3xl font-heading font-extrabold text-slate-800 leading-tight">{selectedComplaint.title}</h3>
+                                        </div>
+
+                                        <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100 relative">
+                                            <div className="absolute top-4 right-6 text-slate-300">“</div>
+                                            <p className="text-slate-600 text-lg leading-relaxed font-medium">
+                                                {selectedComplaint.description}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Info Grid */}
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="p-6 bg-white border border-slate-100 shadow-sm rounded-3xl">
+                                            <div className="flex items-center gap-3 text-indigo-600 mb-3">
+                                                <User size={18} />
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Citizen Profile</span>
+                                            </div>
+                                            <p className="font-black text-slate-800">{selectedComplaint.citizen?.full_name}</p>
+                                            <p className="text-xs font-bold text-slate-400 mt-1">{selectedComplaint.citizen?.email}</p>
+                                        </div>
+
+                                        <div className="p-6 bg-white border border-slate-100 shadow-sm rounded-3xl">
+                                            <div className="flex items-center gap-3 text-blue-600 mb-3">
+                                                <Filter size={18} />
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Categorization</span>
+                                            </div>
+                                            <p className="font-black text-slate-800">{selectedComplaint.category}</p>
+                                            <p className="text-xs font-bold text-slate-400 mt-1">{selectedComplaint.department?.name}</p>
+                                        </div>
+
+                                        <div className="p-6 bg-white border border-slate-100 shadow-sm rounded-3xl">
+                                            <div className="flex items-center gap-3 text-amber-600 mb-3">
+                                                <Calendar size={18} />
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">SLA Monitoring</span>
+                                            </div>
+                                            <p className="font-black text-slate-800">Deadline: {new Date(selectedComplaint.sla_deadline).toLocaleDateString()}</p>
+                                            <p className={`text-[10px] font-black mt-1 uppercase ${new Date(selectedComplaint.sla_deadline) < new Date() ? 'text-red-500' : 'text-green-500'}`}>
+                                                {new Date(selectedComplaint.sla_deadline) < new Date() ? 'SLA BREACHED' : 'WITHIN TIMELINE'}
+                                            </p>
+                                        </div>
+
+                                        <div className="p-6 bg-white border border-slate-100 shadow-sm rounded-3xl">
+                                            <div className="flex items-center gap-3 text-slate-600 mb-3">
+                                                <TrendingUp size={18} />
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">System Priority</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-2.5 h-2.5 rounded-full ${selectedComplaint.priority === 'high' ? 'bg-red-500' : 'bg-amber-500'}`}></div>
+                                                <p className="font-black text-slate-800 uppercase tracking-tight">{selectedComplaint.priority}</p>
+                                            </div>
+                                            <p className="text-[10px] font-bold text-slate-400 mt-1">AI SCORING: 0.85</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-8 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-6">
+                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Administrative Action:</span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handleUpdateStatus(selectedComplaint.id, 'resolved')}
+                                        className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all hover:-translate-y-px"
+                                    >
+                                        Mark as Resolved
+                                    </button>
+                                    <button className="px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl text-sm font-black hover:bg-slate-50 transition-all">
+                                        Escalate to Head
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reference ID</p>
+                                <p className="text-[10px] font-mono text-slate-500 mt-1">{selectedComplaint.id}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
