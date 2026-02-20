@@ -41,6 +41,13 @@ export default function CitizenDashboard() {
     const [departments, setDepartments] = useState([]);
     const [isListening, setIsListening] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [userComplaints, setUserComplaints] = useState([]);
+    const [userStats, setUserStats] = useState({
+        total: 0,
+        inProgress: 0,
+        resolved: 0,
+        escalated: 0
+    });
     const recognitionRef = useRef(null);
     const isListeningRef = useRef(false);
 
@@ -48,12 +55,36 @@ export default function CitizenDashboard() {
 
     useEffect(() => {
         fetchDepartments();
+        if (user) {
+            fetchData();
+        }
         return () => {
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
             }
         };
     }, []);
+
+    const fetchData = async () => {
+        const { data, error } = await supabase
+            .from('complaints')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+        if (!error) {
+            setUserComplaints(data);
+
+            // Calculate stats
+            const stats = {
+                total: data.length,
+                inProgress: data.filter(c => c.status === 'in_progress' || c.status === 'assigned').length,
+                resolved: data.filter(c => c.status === 'resolved' || c.status === 'closed').length,
+                escalated: data.filter(c => c.escalation_level > 0).length
+            };
+            setUserStats(stats);
+        }
+    };
 
     const fetchDepartments = async () => {
         const { data, error } = await supabase.from('departments').select('*');
@@ -236,11 +267,11 @@ export default function CitizenDashboard() {
         { id: 'history', label: 'My Complaints', icon: <Clock size={20} /> },
     ];
 
-    const stats = [
-        { label: 'Total Reports', value: '12', color: 'from-blue-500 to-blue-600', icon: FileText },
-        { label: 'In Progress', value: '3', color: 'from-amber-500 to-amber-600', icon: Clock },
-        { label: 'Resolved', value: '8', color: 'from-green-500 to-green-600', icon: CheckCircle2 },
-        { label: 'Escalated', value: '1', color: 'from-purple-500 to-purple-600', icon: AlertTriangle },
+    const statsData = [
+        { label: 'Total Reports', value: userStats.total, color: 'from-blue-500 to-blue-600', icon: FileText },
+        { label: 'In Progress', value: userStats.inProgress, color: 'from-amber-500 to-amber-600', icon: Clock },
+        { label: 'Resolved', value: userStats.resolved, color: 'from-green-500 to-green-600', icon: CheckCircle2 },
+        { label: 'Escalated', value: userStats.escalated, color: 'from-purple-500 to-purple-600', icon: AlertTriangle },
     ];
 
     return (
@@ -353,7 +384,7 @@ export default function CitizenDashboard() {
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
                                 {/* Stats Grid */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
-                                    {stats.map((stat, i) => (
+                                    {statsData.map((stat, i) => (
                                         <div key={i} className="bg-white/60 backdrop-blur-md p-6 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all group hover:-translate-y-1 duration-300">
                                             <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${stat.color} mb-4 flex items-center justify-center text-white shadow-lg shadow-gray-200 group-hover:scale-110 transition-transform duration-300`}>
                                                 <stat.icon size={20} />
@@ -394,22 +425,32 @@ export default function CitizenDashboard() {
                                         <button onClick={() => setActiveTab('history')} className="text-sm font-bold text-primary-600 hover:text-primary-700 hover:underline decoration-2 underline-offset-4">View All</button>
                                     </div>
                                     <div className="space-y-4">
-                                        {[1, 2, 3].map((_, i) => (
+                                        {userComplaints.slice(0, 3).map((item, i) => (
                                             <div key={i} className="bg-white/80 p-5 rounded-2xl border border-white/50 shadow-sm hover:shadow-md hover:border-primary-100 transition-all cursor-pointer group flex items-center justify-between">
                                                 <div className="flex items-center gap-5">
                                                     <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-primary-50 group-hover:text-primary-600 transition-colors border border-slate-100">
                                                         <FileText size={24} />
                                                     </div>
                                                     <div>
-                                                        <h4 className="font-bold text-slate-800 text-lg group-hover:text-primary-600 transition-colors">Street Light Malfunction</h4>
-                                                        <p className="text-sm text-slate-500 font-medium mt-1">Koramangala 4th Block • 2 days ago</p>
+                                                        <h4 className="font-bold text-slate-800 text-lg group-hover:text-primary-600 transition-colors">{item.title}</h4>
+                                                        <p className="text-sm text-slate-500 font-medium mt-1">{item.category} • {new Date(item.created_at).toLocaleDateString()}</p>
                                                     </div>
                                                 </div>
-                                                <span className="px-4 py-1.5 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-100 shadow-sm">
-                                                    In Progress
+                                                <span className={`px-4 py-1.5 text-xs font-bold rounded-full border shadow-sm ${item.status === 'resolved'
+                                                    ? 'bg-green-50 text-green-700 border-green-100'
+                                                    : item.status === 'open'
+                                                        ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                                        : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                    }`}>
+                                                    {item.status.charAt(0).toUpperCase() + item.status.slice(1).replace('_', ' ')}
                                                 </span>
                                             </div>
                                         ))}
+                                        {userComplaints.length === 0 && (
+                                            <div className="p-10 text-center bg-white/50 rounded-2xl border-2 border-dashed border-slate-200">
+                                                <p className="text-slate-500 font-medium">No recent reports found. Help improve your city by reporting an issue!</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -618,34 +659,50 @@ export default function CitizenDashboard() {
                         {activeTab === 'history' && (
                             <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-700">
                                 <h2 className="text-2xl font-heading font-extrabold text-slate-800 px-2">My Reports</h2>
-                                {[1, 2, 3, 4].map((item, i) => (
-                                    <div key={i} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 hover:shadow-lg hover:border-primary-200 transition-all group cursor-pointer relative overflow-hidden">
+                                {userComplaints.map((item, i) => (
+                                    <div key={item.id} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 hover:shadow-lg hover:border-primary-200 transition-all group cursor-pointer relative overflow-hidden">
                                         <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-primary-400 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                         <div className="flex items-start justify-between mb-5">
                                             <div className="flex gap-5">
                                                 <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-110 transition-transform">
-                                                    <AlertTriangle size={26} />
+                                                    {item.status === 'resolved' ? <CheckCircle2 size={26} /> : <AlertTriangle size={26} />}
                                                 </div>
                                                 <div>
-                                                    <h4 className="font-heading font-bold text-slate-800 text-xl group-hover:text-primary-700 transition-colors">Garbage Dump on 5th Main</h4>
-                                                    <p className="text-sm text-slate-500 font-bold mt-1 uppercase tracking-wide opacity-70">Public Sanitation • Feb 18</p>
+                                                    <h4 className="font-heading font-bold text-slate-800 text-xl group-hover:text-primary-700 transition-colors">{item.title}</h4>
+                                                    <p className="text-sm text-slate-500 font-bold mt-1 uppercase tracking-wide opacity-70">{item.category} • {new Date(item.created_at).toLocaleDateString()}</p>
                                                 </div>
                                             </div>
-                                            <span className="px-4 py-1.5 bg-green-100 text-green-700 border border-green-200 rounded-full text-xs font-black uppercase tracking-widest shadow-sm">
-                                                Resolved
+                                            <span className={`px-4 py-1.5 text-xs font-black uppercase tracking-widest shadow-sm rounded-full border ${item.status === 'resolved'
+                                                ? 'bg-green-100 text-green-700 border-green-200'
+                                                : item.status === 'open'
+                                                    ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                                    : 'bg-amber-100 text-amber-700 border-amber-200'
+                                                }`}>
+                                                {item.status.replace('_', ' ')}
                                             </span>
                                         </div>
                                         <div className="pl-20">
                                             <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 text-sm text-slate-600 font-medium leading-relaxed mb-5 italic">
-                                                "The garbage truck has not visited this street for 3 days. There is a pile up causing bad odor..."
+                                                "{item.description}"
                                             </div>
                                             <div className="flex items-center gap-8 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                                <span className="flex items-center gap-2 text-green-600 bg-green-50 px-3 py-1 rounded-lg"><Clock size={14} /> SLA: Met</span>
+                                                <span className={`flex items-center gap-2 px-3 py-1 rounded-lg ${new Date(item.sla_deadline) > new Date() || item.status === 'resolved' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                                                    <Clock size={14} /> SLA: {new Date(item.sla_deadline) > new Date() || item.status === 'resolved' ? 'Active' : 'Breached'}
+                                                </span>
                                                 <span className="flex items-center gap-2 text-primary-600 cursor-pointer hover:underline decoration-2 underline-offset-4 transition-all">View Details <ChevronRight size={14} /></span>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
+                                {userComplaints.length === 0 && (
+                                    <div className="text-center py-20 bg-white/50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
+                                        <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto mb-6 text-slate-300">
+                                            <FileText size={40} />
+                                        </div>
+                                        <h3 className="text-xl font-heading font-bold text-slate-400">No complaints filed yet</h3>
+                                        <p className="text-slate-400 mt-2">Your complaint history will appear here.</p>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

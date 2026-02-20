@@ -56,6 +56,7 @@ export default function AdminDashboard() {
     const [stats, setStats] = useState({ total: 0, open: 0, resolved: 0, breaches: 0 });
     const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
+    const user = JSON.parse(localStorage.getItem('user_session'));
 
     useEffect(() => {
         fetchAllData();
@@ -277,8 +278,8 @@ export default function AdminDashboard() {
                         <div className="mt-8 px-4 py-3 bg-slate-800/50 rounded-xl border border-slate-700/50 flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-xs font-bold text-white shadow-inner">AD</div>
                             <div>
-                                <p className="text-sm font-bold text-slate-200">Admin User</p>
-                                <p className="text-[10px] uppercase font-bold text-slate-500">Ward 4 Comm.</p>
+                                <p className="text-sm font-bold text-slate-200">{user?.full_name || 'Admin User'}</p>
+                                <p className="text-[10px] uppercase font-bold text-slate-500">System Administrator</p>
                             </div>
                         </div>
                     </div>
@@ -370,10 +371,10 @@ export default function AdminDashboard() {
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
                                 {/* KPI Cards - Glass Style */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <KpiCard label="Total Complaints" value={stats.total} change="+12.5%" icon={<ListFilter />} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" />
-                                    <KpiCard label="Open Issues" value={stats.open} change="-2.4%" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" />
-                                    <KpiCard label="Resolved" value={stats.resolved} change="+18.2%" icon={<CheckCircle2 />} color="text-green-600" bg="bg-green-50" border="border-green-100" />
-                                    <KpiCard label="SLA Breaches" value={stats.breaches} change="+4.1%" icon={<Clock />} color="text-red-600" bg="bg-red-50" border="border-red-100" isBad />
+                                    <KpiCard label="Total Complaints" value={stats.total} icon={<ListFilter />} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" />
+                                    <KpiCard label="Open Issues" value={stats.open} icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" />
+                                    <KpiCard label="Resolved" value={stats.resolved} icon={<CheckCircle2 />} color="text-green-600" bg="bg-green-50" border="border-green-100" />
+                                    <KpiCard label="SLA Breaches" value={stats.breaches} icon={<Clock />} color="text-red-600" bg="bg-red-50" border="border-red-100" isBad />
                                 </div>
 
                                 {/* Charts */}
@@ -393,7 +394,7 @@ export default function AdminDashboard() {
                                         <div className="flex-1 flex items-center justify-center relative">
                                             <Doughnut data={doughnutData} options={{ maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Inter', size: 10 } } } } }} />
                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
-                                                <span className="text-3xl font-heading font-black text-slate-800">1.2k</span>
+                                                <span className="text-3xl font-heading font-black text-slate-800">{stats.total}</span>
                                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</span>
                                             </div>
                                         </div>
@@ -510,9 +511,9 @@ const KpiCard = ({ label, value, change, icon, color, bg, border, isBad }) => (
         </div>
         <div className="flex items-center gap-2 z-10 mt-auto">
             <span className={`text-xs font-black px-2 py-0.5 rounded-md ${isBad ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                {change}
+                LIVE
             </span>
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">vs last month</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Real-time sync</span>
         </div>
 
         {/* Decorative Glow */}
