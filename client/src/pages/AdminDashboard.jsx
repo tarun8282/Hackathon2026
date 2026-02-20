@@ -70,6 +70,31 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         fetchAllData();
+
+        // Subscribe to real-time updates for complaints table
+        const channel = supabase
+            .channel('complaints-channel')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'complaints'
+                },
+                (payload) => {
+                    console.log('🔔 REAL-TIME EVENT:', payload.eventType, payload);
+                    // Force a fresh fetch of all data including relations
+                    fetchAllData();
+                }
+            )
+            .subscribe((status, err) => {
+                console.log('📡 Real-time status:', status);
+                if (err) console.error('❌ Real-time error:', err);
+            });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     const fetchAllData = async () => {
