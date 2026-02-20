@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import {
     LayoutDashboard,
     ListFilter,
@@ -51,6 +52,104 @@ ChartJS.register(
 export default function AdminDashboard() {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [complaints, setComplaints] = useState([]);
+    const [stats, setStats] = useState({ total: 0, open: 0, resolved: 0, breaches: 0 });
+    const [staff, setStaff] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetchAllData();
+    }, []);
+
+    const fetchAllData = async () => {
+        setLoading(true);
+        try {
+            // Fetch Complaints with user and dept info
+            const { data: complaintsData, error: compError } = await supabase
+                .from('complaints')
+                .select(`
+                    *,
+                    citizen:users!complaints_user_id_fkey(full_name, email),
+                    department:departments(name)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (compError) throw compError;
+            setComplaints(complaintsData || []);
+
+            // Calculate basic stats
+            const total = complaintsData?.length || 0;
+            const open = complaintsData?.filter(c => c.status === 'open' || c.status === 'assigned' || c.status === 'in_progress').length || 0;
+            const resolved = complaintsData?.filter(c => c.status === 'resolved' || c.status === 'closed').length || 0;
+            const breaches = complaintsData?.filter(c => new Date(c.sla_deadline) < new Date() && c.status !== 'resolved').length || 0;
+
+            setStats({ total, open, resolved, breaches });
+
+            // Fetch Staff
+            const { data: staffData } = await supabase
+                .from('users')
+                .select('*')
+                .eq('role', 'staff');
+            setStaff(staffData || []);
+
+        } catch (error) {
+            console.error("Error fetching admin data:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpdateStatus = async (complaintId, newStatus) => {
+        try {
+            const { error } = await supabase
+                .from('complaints')
+                .update({ status: newStatus, updated_at: new Date().toISOString() })
+                .eq('id', complaintId);
+
+            if (error) throw error;
+
+            // Log history
+            const user = JSON.parse(localStorage.getItem('user_session'));
+            await supabase.from('complaint_history').insert([{
+                complaint_id: complaintId,
+                status_to: newStatus,
+                comment: `Status updated by Admin`,
+                actor_id: user.id
+            }]);
+
+            fetchAllData();
+        } catch (error) {
+            alert("Failed to update status");
+        }
+    };
+
+    const handleAssignStaff = async (complaintId, staffId) => {
+        try {
+            const { error } = await supabase
+                .from('complaints')
+                .update({
+                    assigned_staff_id: staffId,
+                    status: 'assigned',
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', complaintId);
+
+            if (error) throw error;
+
+            // Log history
+            const user = JSON.parse(localStorage.getItem('user_session'));
+            await supabase.from('complaint_history').insert([{
+                complaint_id: complaintId,
+                status_to: 'assigned',
+                comment: `Assigned to staff by Admin`,
+                actor_id: user.id
+            }]);
+
+            fetchAllData();
+        } catch (error) {
+            alert("Failed to assign staff");
+        }
+    };
 
     const handleLogout = () => {
         localStorage.removeItem('user_session');
@@ -78,29 +177,45 @@ export default function AdminDashboard() {
         interaction: { mode: 'index', intersect: false },
     };
 
+    // Process Line Chart Data (Last 6 Months)
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const currentMonth = new Date().getMonth();
+    const last6Months = [];
+    for (let i = 5; i >= 0; i--) {
+        last6Months.push(months[(currentMonth - i + 12) % 12]);
+    }
+
+    const complaintsTrend = last6Months.map(m => {
+        return complaints.filter(c => {
+            const date = new Date(c.created_at);
+            return months[date.getMonth()] === m;
+        }).length;
+    });
+
+    const resolvedTrend = last6Months.map(m => {
+        return complaints.filter(c => {
+            const date = new Date(c.created_at);
+            return months[date.getMonth()] === m && (c.status === 'resolved' || c.status === 'closed');
+        }).length;
+    });
+
     const lineData = {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+        labels: last6Months,
         datasets: [
             {
                 label: 'New Reports',
-                data: [65, 59, 80, 81, 56, 155],
+                data: complaintsTrend,
                 borderColor: '#3b82f6',
                 tension: 0.4,
-                backgroundColor: (context) => {
-                    const ctx = context.chart.ctx;
-                    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
-                    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
-                    gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
-                    return gradient;
-                },
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
                 fill: true,
                 borderWidth: 2,
-                pointRadius: 0,
+                pointRadius: 4,
                 pointHoverRadius: 6
             },
             {
                 label: 'Resolved',
-                data: [40, 48, 60, 75, 50, 140],
+                data: resolvedTrend,
                 borderColor: '#10b981',
                 tension: 0.4,
                 backgroundColor: 'transparent',
@@ -111,12 +226,18 @@ export default function AdminDashboard() {
         ]
     };
 
+    // Process Doughnut Data (Categories)
+    const categoryCounts = complaints.reduce((acc, c) => {
+        acc[c.category] = (acc[c.category] || 0) + 1;
+        return acc;
+    }, {});
+
     const doughnutData = {
-        labels: ['Roads', 'Garbage', 'Drainage', 'Others'],
+        labels: Object.keys(categoryCounts).length > 0 ? Object.keys(categoryCounts) : ['No Data'],
         datasets: [
             {
-                data: [12, 19, 3, 5],
-                backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#10b981'],
+                data: Object.values(categoryCounts).length > 0 ? Object.values(categoryCounts) : [1],
+                backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6', '#ec4899'],
                 borderWidth: 0,
                 hoverOffset: 10
             },
@@ -140,13 +261,13 @@ export default function AdminDashboard() {
                 flex flex-col relative overflow-hidden shadow-2xl
             `}>
                 {/* Gradient Mesh Background for Sidebar */}
-                <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-indigo-900/20 to-slate-900/0 pointer-events-none"></div>
+                <div className="absolute top-0 left-0 w-full h-full bg-linear-to-b from-indigo-900/20 to-slate-900/0 pointer-events-none"></div>
                 <div className="absolute -top-24 -right-24 w-60 h-60 bg-blue-500/10 rounded-full blur-3xl"></div>
 
                 <div className="h-full flex flex-col relative z-10">
                     <div className="p-8 pb-6 border-b border-slate-800/50">
                         <div className="flex items-center gap-3 text-white mb-2">
-                            <div className="p-2 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
+                            <div className="p-2 bg-linear-to-br from-indigo-500 to-blue-600 rounded-lg shadow-lg shadow-blue-500/20">
                                 <ShieldAlert size={24} className="text-white" />
                             </div>
                             <h1 className="text-xl font-heading font-extrabold tracking-tight">Admin<span className="text-indigo-400">Resolve</span></h1>
@@ -239,7 +360,7 @@ export default function AdminDashboard() {
                                 <button className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 hover:border-slate-300 flex items-center gap-2 shadow-sm transition-all">
                                     <Filter size={16} /> Filters
                                 </button>
-                                <button className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center gap-2 transition-all hover:translate-y-[-1px]">
+                                <button className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex items-center gap-2 transition-all hover:-translate-y-px">
                                     <Download size={16} /> Export Report
                                 </button>
                             </div>
@@ -249,10 +370,10 @@ export default function AdminDashboard() {
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700">
                                 {/* KPI Cards - Glass Style */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                    <KpiCard label="Total Complaints" value="1,284" change="+12.5%" icon={<ListFilter />} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" />
-                                    <KpiCard label="Open Issues" value="142" change="-2.4%" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" />
-                                    <KpiCard label="Resolved" value="1,105" change="+18.2%" icon={<CheckCircle2 />} color="text-green-600" bg="bg-green-50" border="border-green-100" />
-                                    <KpiCard label="SLA Breaches" value="37" change="+4.1%" icon={<Clock />} color="text-red-600" bg="bg-red-50" border="border-red-100" isBad />
+                                    <KpiCard label="Total Complaints" value={stats.total} change="+12.5%" icon={<ListFilter />} color="text-blue-600" bg="bg-blue-50" border="border-blue-100" />
+                                    <KpiCard label="Open Issues" value={stats.open} change="-2.4%" icon={<AlertTriangle />} color="text-amber-600" bg="bg-amber-50" border="border-amber-100" />
+                                    <KpiCard label="Resolved" value={stats.resolved} change="+18.2%" icon={<CheckCircle2 />} color="text-green-600" bg="bg-green-50" border="border-green-100" />
+                                    <KpiCard label="SLA Breaches" value={stats.breaches} change="+4.1%" icon={<Clock />} color="text-red-600" bg="bg-red-50" border="border-red-100" isBad />
                                 </div>
 
                                 {/* Charts */}
@@ -297,45 +418,71 @@ export default function AdminDashboard() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                            {[1, 2, 3, 4, 5].map((i) => (
-                                                <tr key={i} className="hover:bg-indigo-50/30 transition-colors group">
-                                                    <td className="p-5 pl-8 font-mono text-xs font-bold text-slate-400 group-hover:text-indigo-500 transition-colors">#CMP-26-0{i}</td>
+                                            {complaints.map((item, i) => (
+                                                <tr key={item.id} className="hover:bg-indigo-50/30 transition-colors group">
+                                                    <td className="p-5 pl-8 font-mono text-xs font-bold text-slate-400 group-hover:text-indigo-500 transition-colors uppercase">
+                                                        #{item.id.slice(0, 8)}
+                                                    </td>
                                                     <td className="p-5">
                                                         <div className="flex items-center gap-4">
-                                                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-xs font-black text-slate-500 border border-slate-200 shadow-sm">
-                                                                AJ
+                                                            <div className="w-9 h-9 rounded-xl bg-linear-to-br from-slate-100 to-slate-200 flex items-center justify-center text-xs font-black text-slate-500 border border-slate-200 shadow-sm">
+                                                                {item.citizen?.full_name?.split(' ').map(n => n[0]).join('') || 'U'}
                                                             </div>
-                                                            <span className="font-bold text-slate-700 text-sm">Alex Johnson</span>
+                                                            <span className="font-bold text-slate-700 text-sm">{item.citizen?.full_name || 'Anonymous'}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="p-5 text-sm font-medium text-slate-600">Road Maintenance</td>
-                                                    <td className="p-5 text-sm font-medium text-slate-600">Public Works</td>
+                                                    <td className="p-5 text-sm font-medium text-slate-600">{item.category}</td>
+                                                    <td className="p-5 text-sm font-medium text-slate-600">{item.department?.name || 'Unassigned'}</td>
                                                     <td className="p-5">
-                                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border shadow-sm ${i === 2 ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                            i === 4 ? 'bg-red-50 text-red-700 border-red-200' :
-                                                                'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                            }`}>
-                                                            {i === 2 ? 'In Progress' : i === 4 ? 'Escalated' : 'Resolved'}
-                                                        </span>
+                                                        <select
+                                                            value={item.status}
+                                                            onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                                                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide border shadow-sm outline-none cursor-pointer ${item.status === 'in_progress' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                                item.status === 'resolved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                                    item.status === 'open' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                                        'bg-red-50 text-red-700 border-red-200'
+                                                                }`}
+                                                        >
+                                                            <option value="open">Open</option>
+                                                            <option value="assigned">Assigned</option>
+                                                            <option value="in_progress">In Progress</option>
+                                                            <option value="resolved">Resolved</option>
+                                                            <option value="closed">Closed</option>
+                                                            <option value="rejected">Rejected</option>
+                                                        </select>
                                                     </td>
                                                     <td className="p-5">
-                                                        <div className={`flex items-center gap-2 text-xs font-bold ${i === 4 ? 'text-red-500' : 'text-slate-400'}`}>
-                                                            <Clock size={14} className={i === 4 ? 'animate-pulse' : ''} />
-                                                            {i === 4 ? 'OVERDUE (2h)' : '14h 30m'}
+                                                        <div className={`flex items-center gap-2 text-xs font-bold ${new Date(item.sla_deadline) < new Date() ? 'text-red-500' : 'text-slate-400'}`}>
+                                                            <Clock size={14} className={new Date(item.sla_deadline) < new Date() ? 'animate-pulse' : ''} />
+                                                            {new Date(item.sla_deadline).toLocaleDateString()}
                                                         </div>
                                                     </td>
                                                     <td className="p-5 pr-8 text-right">
-                                                        <button className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-                                                            <MoreVertical size={18} />
-                                                        </button>
+                                                        <select
+                                                            className="text-[10px] font-bold bg-white border border-slate-200 rounded px-2 py-1 outline-none"
+                                                            onChange={(e) => handleAssignStaff(item.id, e.target.value)}
+                                                            value={item.assigned_staff_id || ""}
+                                                        >
+                                                            <option value="">Assign Staff</option>
+                                                            {staff.map(s => (
+                                                                <option key={s.id} value={s.id}>{s.full_name}</option>
+                                                            ))}
+                                                        </select>
                                                     </td>
                                                 </tr>
                                             ))}
+                                            {complaints.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="7" className="p-10 text-center text-slate-400 font-medium font-heading">
+                                                        No records found in the system.
+                                                    </td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
                                 <div className="p-5 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wide">
-                                    <span>Showing 1-5 of 128 items</span>
+                                    <span>Showing {complaints.length} items</span>
                                     <div className="flex gap-2">
                                         <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 shadow-sm transition-all">Previous</button>
                                         <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 shadow-sm transition-all">Next</button>
@@ -351,7 +498,7 @@ export default function AdminDashboard() {
 }
 
 const KpiCard = ({ label, value, change, icon, color, bg, border, isBad }) => (
-    <div className="bg-white/70 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:translate-y-[-2px] transition-all duration-300 group flex flex-col justify-between h-36 relative overflow-hidden">
+    <div className="bg-white/70 backdrop-blur-md p-6 rounded-3xl border border-white/60 shadow-[0_4px_20px_rgb(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 group flex flex-col justify-between h-36 relative overflow-hidden">
         <div className="flex justify-between items-start z-10">
             <div>
                 <p className="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-[0.2em]">{label}</p>
