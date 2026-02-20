@@ -42,6 +42,7 @@ export default function CitizenDashboard() {
     const [isListening, setIsListening] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const recognitionRef = useRef(null);
+    const isListeningRef = useRef(false);
 
     const user = JSON.parse(localStorage.getItem('user_session'));
 
@@ -104,6 +105,7 @@ export default function CitizenDashboard() {
             recognition.onend = () => {
                 console.log("Recognition.onend fired. isListening was:", isListening);
                 setIsListening(false);
+                isListeningRef.current = false;
                 setInterimText('');
                 recognitionRef.current = null;
             };
