@@ -1,15 +1,29 @@
 -- Enable PostGIS extension for geo-location
 create extension if not exists postgis;
 
--- Create Complaints Table
-create table public.complaints (
+-- Create Custom Users Table (Replacing Supabase Auth)
+create table if not exists public.users (
   id uuid default gen_random_uuid() primary key,
-  citizen_id uuid references auth.users(id) on delete set null,
+  email text unique not null,
+  password text not null, -- Manual password management
+  role text default 'citizen' check (role in ('citizen', 'admin')),
+  full_name text,
+  created_at timestamptz default now()
+);
+
+-- Note: RLS is disabled by default for this custom table to allow the frontend 
+-- to query it manually for Login/Signup without needing a logged-in Supabase Auth session.
+alter table public.users disable row level security;
+
+-- Create Complaints Table
+create table if not exists public.complaints (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references public.users(id) on delete set null, -- Points to our custom table
   title text not null,
   description text not null,
   category text not null, -- Road, Garbage, Drainage, Lighting, Sanitation
   department text,
-  status text default 'open', -- open, in-progress, resolved, escalated
+  status text default 'open',
   priority text default 'medium',
   location geography(point) not null,
   sla_deadline timestamptz not null,
@@ -20,23 +34,5 @@ create table public.complaints (
   resolved_at timestamptz
 );
 
--- Row Level Security (RLS)
-alter table public.complaints enable row level security;
-
--- Policies for Citizens
-create policy "Citizens can view their own complaints"
-  on complaints for select
-  using (auth.uid() = citizen_id);
-
-create policy "Citizens can insert complaints"
-  on complaints for insert
-  with check (auth.uid() = citizen_id);
-
--- Policies for Admins/Officers (Example: all can read, status updates restricted)
-create policy "Admins can view all"
-  on complaints for select
-  using (true); -- Refine based on roles later
-
-create policy "Admins can update complaints"
-  on complaints for update
-  using (true); -- Refine based on roles later
+-- Disable RLS for hackathon simplicity (or implement manual checks)
+alter table public.complaints disable row level security;
