@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
     LayoutDashboard,
     ListFilter,
@@ -57,6 +60,57 @@ ChartJS.register(
     Legend,
     ArcElement
 );
+
+// Fix Leaflet icon issue
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: markerIcon,
+    shadowUrl: markerShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+// Robust helper to parse location
+const parseLocation = (locationStr) => {
+    if (!locationStr) return null;
+    try {
+        // Handle GeoJSON format
+        if (typeof locationStr === 'object' && locationStr.coordinates) {
+            return { lng: locationStr.coordinates[0], lat: locationStr.coordinates[1] };
+        }
+
+        // Handle PostGIS string format "POINT(lng lat)"
+        if (typeof locationStr === 'string') {
+            const match = locationStr.match(/POINT\s*\(\s*([-\d.eE]+)\s+([-\d.eE]+)\s*\)/i);
+            if (match) {
+                return { lng: parseFloat(match[1]), lat: parseFloat(match[2]) };
+            }
+
+            // Handle WKB (Hex) Point format
+            if (locationStr.startsWith('0101')) {
+                const hex = locationStr;
+                const isSRID = hex.substring(2, 10).toLowerCase() === '01000020';
+                const offset = isSRID ? 18 : 10;
+
+                const hexToFloat = (h) => {
+                    const bytes = new Uint8Array(h.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                    const view = new DataView(bytes.buffer);
+                    return view.getFloat64(0, true);
+                };
+
+                const lng = hexToFloat(hex.substring(offset, offset + 16));
+                const lat = hexToFloat(hex.substring(offset + 16, offset + 32));
+                return { lng, lat };
+            }
+        }
+    } catch (e) {
+        console.error("Location parsing error", e);
+    }
+    return null;
+};
 
 export default function AdminDashboard() {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -121,18 +175,33 @@ export default function AdminDashboard() {
 
             if (error) throw error;
 
-            // Log history
-            const user = JSON.parse(localStorage.getItem('user_session'));
-            await supabase.from('complaint_history').insert([{
-                complaint_id: complaintId,
-                status_to: newStatus,
-                comment: `Status updated by Admin`,
-                actor_id: user.id
-            }]);
-
+            // Immediate UI update
             fetchAllData();
+            if (selectedComplaint?.id === complaintId) {
+                setSelectedComplaint(prev => ({ ...prev, status: newStatus }));
+            }
+
+            // Log history (non-blocking)
+            try {
+                const userStr = localStorage.getItem('user_session');
+                if (userStr) {
+                    const sessionUser = JSON.parse(userStr);
+                    if (sessionUser && (sessionUser.id || sessionUser.user_id)) {
+                        await supabase.from('complaint_history').insert([{
+                            complaint_id: complaintId,
+                            status_to: newStatus,
+                            comment: `Status updated by Admin`,
+                            actor_id: sessionUser.id || sessionUser.user_id
+                        }]);
+                    }
+                }
+            } catch (hError) {
+                console.error("History log failed:", hError);
+            }
+
         } catch (error) {
-            alert("Failed to update status");
+            console.error("Status update error:", error);
+            alert("Failed to update status: " + (error.message || "Unknown error"));
         }
     };
 
@@ -149,16 +218,26 @@ export default function AdminDashboard() {
 
             if (error) throw error;
 
-            // Log history
-            const user = JSON.parse(localStorage.getItem('user_session'));
-            await supabase.from('complaint_history').insert([{
-                complaint_id: complaintId,
-                status_to: 'assigned',
-                comment: `Assigned to staff by Admin`,
-                actor_id: user.id
-            }]);
-
+            // Immediate UI update
             fetchAllData();
+
+            // Log history (non-blocking)
+            try {
+                const userStr = localStorage.getItem('user_session');
+                if (userStr) {
+                    const sessionUser = JSON.parse(userStr);
+                    if (sessionUser && sessionUser.id) {
+                        await supabase.from('complaint_history').insert([{
+                            complaint_id: complaintId,
+                            status_to: 'assigned',
+                            comment: `Assigned to staff by Admin`,
+                            actor_id: sessionUser.id
+                        }]);
+                    }
+                }
+            } catch (hError) {
+                console.error("History logging failed:", hError);
+            }
         } catch (error) {
             alert("Failed to assign staff");
         }
@@ -235,6 +314,7 @@ export default function AdminDashboard() {
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
         { id: 'complaints', label: 'All Complaints', icon: <ListFilter size={20} /> },
+        { id: 'map', label: 'City Map', icon: <MapPin size={20} /> },
         { id: 'sla', label: 'SLA Monitoring', icon: <AlertTriangle size={20} /> },
         { id: 'analytics', label: 'Analytics', icon: <FileBarChart size={20} /> },
     ];
@@ -592,6 +672,61 @@ export default function AdminDashboard() {
                                 </div>
                             </div>
                         )}
+
+                        {activeTab === 'map' && (
+                            <div className="bg-white/80 backdrop-blur-xl rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 overflow-hidden h-[700px] flex flex-col animate-in fade-in slide-in-from-bottom-6 duration-700">
+                                <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                                    <div>
+                                        <h3 className="font-heading font-bold text-lg text-slate-800">Global Incident Intelligence</h3>
+                                        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Live Spatial Distribution</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg border border-green-100 text-[10px] font-bold">
+                                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                                            {complaints.length} Active Markers
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex-1 relative">
+                                    <MapContainer
+                                        center={[12.9716, 77.5946]} // Bangalore default
+                                        zoom={12}
+                                        style={{ height: '100%', width: '100%' }}
+                                    >
+                                        <TileLayer
+                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                        />
+                                        {complaints.map(item => {
+                                            const pos = parseLocation(item.location);
+                                            return pos ? (
+                                                <Marker key={item.id} position={[pos.lat, pos.lng]}>
+                                                    <Popup>
+                                                        <div className="p-2 min-w-[200px]">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded border ${item.status === 'resolved' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
+                                                                    }`}>
+                                                                    {item.status}
+                                                                </span>
+                                                                <span className="text-[10px] font-mono text-slate-400">#{item.id.slice(0, 8)}</span>
+                                                            </div>
+                                                            <h5 className="font-bold text-slate-800 text-sm">{item.title}</h5>
+                                                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">{item.description}</p>
+                                                            <button
+                                                                onClick={() => setSelectedComplaint(item)}
+                                                                className="mt-3 w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors"
+                                                            >
+                                                                View Full Details
+                                                            </button>
+                                                        </div>
+                                                    </Popup>
+                                                </Marker>
+                                            ) : null;
+                                        })}
+                                    </MapContainer>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </main>
@@ -615,10 +750,22 @@ export default function AdminDashboard() {
                                     <div>
                                         <div className="flex items-center gap-3">
                                             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Full Incident Report</h2>
-                                            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${selectedComplaint.status === 'resolved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'
-                                                }`}>
-                                                {selectedComplaint.status}
-                                            </span>
+                                            <select
+                                                value={selectedComplaint.status}
+                                                onChange={(e) => handleUpdateStatus(selectedComplaint.id, e.target.value)}
+                                                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm outline-none cursor-pointer ${selectedComplaint.status === 'resolved' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                    selectedComplaint.status === 'in_progress' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                                        selectedComplaint.status === 'open' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                            'bg-red-50 text-red-600 border-red-100'
+                                                    }`}
+                                            >
+                                                <option value="open">Open</option>
+                                                <option value="assigned">Assigned</option>
+                                                <option value="in_progress">In Progress</option>
+                                                <option value="resolved">Resolved</option>
+                                                <option value="closed">Closed</option>
+                                                <option value="rejected">Rejected</option>
+                                            </select>
                                         </div>
                                         <p className="text-slate-400 font-bold text-xs mt-1 uppercase tracking-widest">Reference: #{selectedComplaint.id}</p>
                                     </div>
@@ -662,20 +809,50 @@ export default function AdminDashboard() {
                                         {/* Location Map Placeholder */}
                                         <div className="space-y-3">
                                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Incident Location</label>
-                                            <div className="h-60 bg-slate-100 rounded-4xl border border-slate-200 relative overflow-hidden group flex items-center justify-center">
-                                                {/* Static Map Background Simulation */}
-                                                <div className="absolute inset-0 bg-[url('https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png')] bg-cover opacity-60 grayscale-20"></div>
-                                                <div className="relative z-10 p-4 bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl border border-white text-center min-w-[200px]">
-                                                    <MapPin size={32} className="text-indigo-600 mx-auto mb-2 animate-bounce" />
-                                                    <p className="text-xs font-black text-slate-800 uppercase tracking-tight">Active Marker</p>
-                                                    <p className="text-[10px] font-bold text-slate-500 mt-1">Coordinates Captured</p>
-                                                </div>
-                                                <div className="absolute bottom-4 left-4 right-4 p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between">
+                                            <div className="h-64 bg-slate-100 rounded-[2rem] border border-slate-200 relative overflow-hidden group">
+                                                {parseLocation(selectedComplaint.location) ? (
+                                                    <MapContainer
+                                                        center={[parseLocation(selectedComplaint.location).lat, parseLocation(selectedComplaint.location).lng]}
+                                                        zoom={15}
+                                                        style={{ height: '100%', width: '100%' }}
+                                                        zoomControl={false}
+                                                    >
+                                                        <TileLayer
+                                                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                                        />
+                                                        <Marker position={[parseLocation(selectedComplaint.location).lat, parseLocation(selectedComplaint.location).lng]}>
+                                                            <Popup>{selectedComplaint.title}</Popup>
+                                                        </Marker>
+                                                    </MapContainer>
+                                                ) : (
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-slate-50 text-slate-400">
+                                                        <div className="text-center">
+                                                            <MapPin size={32} className="mx-auto mb-2 opacity-50" />
+                                                            <p className="text-[10px] font-bold uppercase tracking-widest">Location Data Missing</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="absolute bottom-4 left-4 right-4 z-[400] p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between shadow-2xl">
                                                     <div className="text-white">
                                                         <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">GIS Mapping</p>
-                                                        <p className="text-[10px] font-mono text-slate-200">Point Captured: {selectedComplaint.location ? "Valid Point" : "Manual Entry"}</p>
+                                                        <p className="text-[10px] font-mono text-slate-200">
+                                                            {parseLocation(selectedComplaint.location)
+                                                                ? `${parseLocation(selectedComplaint.location).lat.toFixed(4)}, ${parseLocation(selectedComplaint.location).lng.toFixed(4)}`
+                                                                : "Manual Entry"}
+                                                        </p>
                                                     </div>
-                                                    <button className="p-2 bg-indigo-600 text-white rounded-lg"><ExternalLink size={14} /></button>
+                                                    {parseLocation(selectedComplaint.location) && (
+                                                        <a
+                                                            href={`https://www.google.com/maps?q=${parseLocation(selectedComplaint.location).lat},${parseLocation(selectedComplaint.location).lng}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                                                        >
+                                                            <ExternalLink size={14} />
+                                                        </a>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
