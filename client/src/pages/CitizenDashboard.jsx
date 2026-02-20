@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import {
     Map as MapIcon,
     PlusCircle,
@@ -23,8 +24,8 @@ import {
     ShieldCheck,
     ArrowRight
 } from 'lucide-react';
-import { categorizeIssue, refineTranscript } from '../services/geminiService';
-import { supabase } from '../lib/supabase';
+import { categorizeIssue } from '../services/geminiService';
+import MapPicker from '../components/MapPicker';
 
 export default function CitizenDashboard() {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -35,166 +36,21 @@ export default function CitizenDashboard() {
     const [complaintText, setComplaintText] = useState('');
     const [interimText, setInterimText] = useState('');
     const [aiResult, setAiResult] = useState(null);
-    const [isListening, setIsListening] = useState(false);
-    const [location, setLocation] = useState(null);
-    const [locationStatus, setLocationStatus] = useState('');
-    const [volumeLevel, setVolumeLevel] = useState(0);
-    const recognitionRef = useRef(null);
+    const [selectedLocation, setSelectedLocation] = useState(null);
+    const [showMapModal, setShowMapModal] = useState(false);
+    const [departments, setDepartments] = useState([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isSuccess, setIsSuccess] = useState(false);
 
-    // Initialize speech recognition with better performance
+    const user = JSON.parse(localStorage.getItem('user_session'));
+
     useEffect(() => {
-        const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
-        if (SpeechRecognition) {
-            const recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.maxAlternatives = 1;
-            recognition.lang = 'en-IN'; // Optimized for Indian accents (English/Hindi/Marathi mix)
-
-            recognition.onresult = (event) => {
-                let currentFinal = '';
-                let currentInterim = '';
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) {
-                        currentFinal += event.results[i][0].transcript;
-                    } else {
-                        currentInterim += event.results[i][0].transcript;
-                    }
-                }
-
-                if (currentFinal) {
-                    setComplaintText(prev => {
-                        const trimmed = prev.trim();
-                        return trimmed + (trimmed ? ' ' : '') + currentFinal.trim();
-                    });
-                }
-                setInterimText(currentInterim);
-            };
-
-            recognition.onend = async () => {
-                setIsListening(false);
-                setInterimText('');
-
-                // Magic AI Fix: Clean up the transcript automatically
-                setComplaintText(prev => {
-                    if (prev.length > 10) {
-                        setIsRefining(true);
-                        refineTranscript(prev).then(refined => {
-                            setComplaintText(refined);
-                            setIsRefining(false);
-                        });
-                    }
-                    return prev;
-                });
-            };
-
-            recognition.onerror = (event) => {
-                console.error("Speech recognition error:", event.error);
-                setIsListening(false);
-            };
-
-            recognitionRef.current = recognition;
-        }
-
-        return () => {
-            if (recognitionRef.current) recognitionRef.current.stop();
-        };
+        fetchDepartments();
     }, []);
 
-    const toggleListening = () => {
-        if (!recognitionRef.current) {
-            alert("Voice recognition not supported. Please use Chrome.");
-            return;
-        }
-
-        if (isListening) {
-            recognitionRef.current.stop();
-        } else {
-            try {
-                recognitionRef.current.start();
-                setIsListening(true);
-                // Simulate volume fluctuation
-                const interval = setInterval(() => {
-                    if (recognitionRef.current && isListening) {
-                        setVolumeLevel(Math.floor(Math.random() * 100));
-                    } else {
-                        clearInterval(interval);
-                    }
-                }, 100);
-            } catch (e) {
-                console.error(e);
-            }
-        }
-    };
-
-    const detectLocation = () => {
-        setLocationStatus('Detecting...');
-        if (!navigator.geolocation) {
-            setLocationStatus('Not supported');
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                setLocation({
-                    lat: pos.coords.latitude,
-                    lng: pos.coords.longitude
-                });
-                setLocationStatus('Location Fixed');
-            },
-            (err) => {
-                console.error(err);
-                setLocationStatus('Access Denied');
-            }
-        );
-    };
-
-    const handleConfirmReport = async () => {
-        if (!aiResult || !location) {
-            alert("Please detect location before submitting.");
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            const userSession = JSON.parse(localStorage.getItem('user_session'));
-
-            // 1. Get Department ID
-            const { data: dept } = await supabase
-                .from('departments')
-                .select('id')
-                .ilike('name', `%${aiResult.category || aiResult.department || 'Road'}%`)
-                .single();
-
-            // 2. Insert Complaint
-            const { error } = await supabase.from('complaints').insert({
-                user_id: userSession?.id,
-                department_id: dept?.id,
-                title: aiResult.formatted_title || 'Civic Issue',
-                description: complaintText,
-                category: aiResult.category || 'General',
-                priority: (aiResult.priority || 'medium').toLowerCase(),
-                location: `POINT(${location.lng} ${location.lat})`,
-                status: 'open'
-            });
-
-            if (error) throw error;
-
-            setIsSuccess(true);
-            setTimeout(() => {
-                setIsSuccess(false);
-                setAiResult(null);
-                setComplaintText('');
-                setLocation(null);
-                setLocationStatus('');
-                setActiveTab('history');
-            }, 3000);
-        } catch (error) {
-            console.error(error);
-            alert("Failed to register complaint.");
-        } finally {
-            setIsSubmitting(false);
-        }
+    const fetchDepartments = async () => {
+        const { data, error } = await supabase.from('departments').select('*');
+        if (!error) setDepartments(data);
     };
 
     const handleLogout = () => {
@@ -215,6 +71,63 @@ export default function CitizenDashboard() {
             console.error("Analysis failed", error);
         } finally {
             setIsAnalyzing(false);
+        }
+    };
+
+    const handleFileComplaint = async () => {
+        if (!selectedLocation || !aiResult || !complaintText) {
+            alert("Please provide all details including location.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            // Find department ID
+            const dept = departments.find(d =>
+                d.name.toLowerCase().includes(aiResult.department.toLowerCase()) ||
+                aiResult.department.toLowerCase().includes(d.name.toLowerCase())
+            );
+
+            const { data: complaint, error: compError } = await supabase
+                .from('complaints')
+                .insert([{
+                    user_id: user.id,
+                    department_id: dept?.id,
+                    title: aiResult.formatted_title || "New Complaint",
+                    description: complaintText,
+                    category: aiResult.category,
+                    status: 'open',
+                    priority: aiResult.priority.toLowerCase(),
+                    location: `POINT(${selectedLocation.lng} ${selectedLocation.lat})`,
+                    sla_deadline: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(), // 48h default
+                }])
+                .select()
+                .single();
+
+            if (compError) throw compError;
+
+            // Log history
+            await supabase.from('complaint_history').insert([{
+                complaint_id: complaint.id,
+                status_to: 'open',
+                comment: 'Complaint filed by citizen via AI portal',
+                actor_id: user.id
+            }]);
+
+            setIsSuccess(true);
+            setTimeout(() => {
+                setIsSuccess(false);
+                setAiResult(null);
+                setComplaintText('');
+                setSelectedLocation(null);
+                setActiveTab('history');
+            }, 2000);
+
+        } catch (error) {
+            console.error("Submission failed", error);
+            alert("Failed to submit complaint. Please try again.");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -262,7 +175,7 @@ export default function CitizenDashboard() {
                         <div className="px-5 py-4 bg-primary-50/50 rounded-2xl border border-primary-100 mb-6 relative overflow-hidden group">
                             <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary-100/50 rounded-full blur-xl group-hover:scale-150 transition-transform duration-700"></div>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 relative z-10">Welcome back,</p>
-                            <p className="font-heading font-black text-xl text-primary-700 relative z-10">Alex Johnson</p>
+                            <p className="font-heading font-black text-xl text-primary-700 relative z-10">{user?.full_name || 'Citizen'}</p>
                         </div>
                     </div>
 
@@ -461,13 +374,24 @@ export default function CitizenDashboard() {
                                             <span className="text-sm font-bold group-hover:text-primary-600">Upload Photo Evidence</span>
                                         </div>
                                         <button
-                                            onClick={detectLocation}
-                                            className={`p-6 border rounded-2xl flex flex-col items-center justify-center gap-3 transition-all h-40 group relative overflow-hidden ${location ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500 hover:border-primary-400 hover:text-primary-600'}`}>
+                                            onClick={() => setShowMapModal(true)}
+                                            className="p-6 bg-white border border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-500 gap-3 hover:border-primary-400 hover:text-primary-600 hover:shadow-lg hover:shadow-primary-50 transition-all h-40 group relative overflow-hidden"
+                                        >
                                             <div className="absolute inset-0 bg-gradient-to-br from-primary-50/0 to-primary-50/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                            <div className={`p-3 rounded-full shadow-sm z-10 ${location ? 'bg-green-100 text-green-600' : 'bg-slate-50 group-hover:bg-white'}`}>
+                                            <div className={`p-3 rounded-full shadow-sm z-10 transition-colors ${selectedLocation ? 'bg-primary-600 text-white' : 'bg-slate-50 group-hover:bg-white'}`}>
                                                 <MapPin size={24} />
                                             </div>
-                                            <span className="text-sm font-bold z-10">{locationStatus || 'Auto-Detect Location'}</span>
+                                            <span className="text-sm font-bold z-10">
+                                                {selectedLocation
+                                                    ? `${selectedLocation.lat.toFixed(4)}, ${selectedLocation.lng.toFixed(4)}`
+                                                    : "Select Location on Map"
+                                                }
+                                            </span>
+                                            {selectedLocation && (
+                                                <div className="absolute top-3 right-3 bg-green-500 text-white p-1 rounded-full animate-in zoom-in">
+                                                    <CheckCircle2 size={12} />
+                                                </div>
+                                            )}
                                         </button>
                                     </div>
 
@@ -525,12 +449,27 @@ export default function CitizenDashboard() {
                                             </div>
 
                                             <button
-                                                onClick={handleConfirmReport}
-                                                disabled={isSubmitting}
-                                                className="w-full mt-8 py-5 bg-green-600 text-white rounded-2xl font-bold text-xl hover:bg-green-700 transition-all shadow-xl shadow-green-200 hover:shadow-green-300 flex items-center justify-center gap-3 transform active:scale-[0.98] disabled:opacity-50"
+                                                onClick={handleFileComplaint}
+                                                disabled={isSubmitting || isSuccess}
+                                                className={`w-full mt-8 py-5 text-white rounded-2xl font-bold text-xl transition-all shadow-xl flex items-center justify-center gap-3 transform active:scale-[0.98] ${isSuccess ? 'bg-green-600 shadow-green-200' : 'bg-green-600 hover:bg-green-700 shadow-green-200 hover:shadow-green-300'
+                                                    }`}
                                             >
-                                                {isSubmitting ? <Loader2 className="animate-spin" size={24} /> : <CheckCircle2 size={24} />}
-                                                {isSubmitting ? 'Registering...' : 'Confirm & File Report'}
+                                                {isSubmitting ? (
+                                                    <>
+                                                        <Loader2 size={24} className="animate-spin" />
+                                                        Recording Report...
+                                                    </>
+                                                ) : isSuccess ? (
+                                                    <>
+                                                        <CheckCircle2 size={24} />
+                                                        Successfully Filed!
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <CheckCircle2 size={24} />
+                                                        Confirm & File Report
+                                                    </>
+                                                )}
                                             </button>
                                         </div>
                                     )}
@@ -610,6 +549,23 @@ export default function CitizenDashboard() {
                         )}
                     </div>
                 </div>
+
+                {/* Map Modal */}
+                {showMapModal && (
+                    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 md:p-8">
+                        <div
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                            onClick={() => setShowMapModal(false)}
+                        />
+                        <div className="relative w-full max-w-4xl h-[80vh] z-10">
+                            <MapPicker
+                                initialLocation={selectedLocation}
+                                onLocationSelect={setSelectedLocation}
+                                onClose={() => setShowMapModal(false)}
+                            />
+                        </div>
+                    </div>
+                )}
             </main>
 
             {/* Success Overlay - Premium Celebration */}
